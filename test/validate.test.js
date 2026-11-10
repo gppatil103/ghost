@@ -69,6 +69,14 @@ describe('validateSettingsPatch', () => {
     expect(() => v.validateSettingsPatch({ panelOpacity: 5 })).toThrow(/panelOpacity/);
   });
 
+  it('validates accent', () => {
+    for (const a of ['blue', 'violet', 'green', 'orange'])
+      expect(v.validateSettingsPatch({ accent: a })).toEqual({ accent: a });
+    expect(() => v.validateSettingsPatch({ accent: 'pink' })).toThrow(/accent/);
+    expect(() => v.validateSettingsPatch({ accent: 1 })).toThrow(/accent/);
+    expect(v.ACCENT_IDS).toEqual(['blue', 'violet', 'green', 'orange']);
+  });
+
   it('does not allow prototype pollution through __proto__', () => {
     const patch = JSON.parse('{"__proto__": {"polluted": true}}');
     expect(() => v.validateSettingsPatch(patch)).toThrow(/Unknown setting/);

@@ -31,7 +31,8 @@ const DEFAULT_SETTINGS = {
   hideFromCapture: false, // best-effort Windows capture-exclusion, opt-in
   saveHistory: false, // persist chat history (encrypted) across restarts
   keepTranscriptAfterStop: false, // false = wipe the rolling transcript when capture stops
-  panelOpacity: 1, // whole-window opacity (0.2–1), set from the header or Settings
+  panelOpacity: 1, // whole-window opacity (0.2–1), set from Settings → Look
+  accent: 'blue', // UI accent color: 'blue' | 'violet' | 'green' | 'orange'
   windowPosition: null, // { x, y } where the user last dragged the panel
   models: {}, // per-provider { fast?, smart? } model id overrides
   shortcuts: {}, // per-command accelerator overrides; '' disables

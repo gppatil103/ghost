@@ -20,6 +20,8 @@ const SHORTCUT_COMMANDS = [
   'toggle_mic',
 ];
 
+const ACCENT_IDS = ['blue', 'violet', 'green', 'orange'];
+
 const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg'];
 const AUDIO_MIME_TYPES = ['audio/webm', 'audio/wav'];
 
@@ -183,6 +185,7 @@ const SETTINGS_SCHEMA = {
   keepTranscriptAfterStop: bool('keepTranscriptAfterStop'),
   panelOpacity: (v) => (typeof v === 'number' && v >= 0.2 && v <= 1 ? v : fail('panelOpacity must be 0.2–1')),
   windowPosition: validateWindowPosition,
+  accent: (v) => (ACCENT_IDS.includes(v) ? v : fail(`accent must be one of ${ACCENT_IDS.join(', ')}`)),
   models: validateModels,
   shortcuts: validateShortcuts,
 };
@@ -227,6 +230,7 @@ module.exports = {
   PROVIDER_IDS,
   ACTION_IDS,
   SHORTCUT_COMMANDS,
+  ACCENT_IDS,
   LIMITS,
   PANEL_SIZE,
   ValidationError,
