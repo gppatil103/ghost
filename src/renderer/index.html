@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self';" />
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none';" />
 <title>Ghost</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -15,13 +15,16 @@
       <div class="brand">
         <span class="dot" id="status-dot"></span>
         <span class="brand-name">Ghost</span>
+        <span id="rec-badge" class="rec-badge hidden" title="Ghost is transcribing audio">● REC</span>
       </div>
       <div class="header-controls no-drag">
-        <label class="smart-toggle" title="Smart mode: slower, higher-quality model">
+        <input type="range" id="quick-opacity" class="quick-opacity" min="0.2" max="1" step="0.02" title="Panel opacity" aria-label="Panel opacity" />
+        <label class="smart-toggle" title="Smart mode: slower, higher-quality model (Ctrl+Shift+S)">
           <input type="checkbox" id="smart-toggle" />
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
           <span class="toggle-label">Smart</span>
         </label>
+        <button id="btn-new-chat" class="icon-btn" title="New chat — forget this conversation">＋</button>
         <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
         <button id="btn-minimize" class="icon-btn" title="Hide (Ctrl+Shift+G)">—</button>
         <button id="btn-close" class="icon-btn" title="Quit Ghost">×</button>
@@ -29,15 +32,25 @@
     </header>
 
     <!-- Capture status row -->
-    <div class="capture-row no-drag">
+    <div class="capture-row">
       <button id="btn-mic" class="pill" title="Listen to mic (Ctrl+Shift+L)">🎙 Mic</button>
       <button id="btn-meeting" class="pill" title="Listen to meeting/system audio">🔊 Meeting</button>
       <button id="btn-screen" class="pill" title="Look at screen once">🖼 Screen</button>
+      <button id="btn-transcript" class="pill" title="Show the live transcript">📝 Transcript</button>
       <span class="capture-hint" id="capture-hint">Off by default — nothing is captured until you turn it on.</span>
     </div>
 
+    <!-- Live transcript viewer -->
+    <div id="transcript-panel" class="transcript-panel no-drag hidden">
+      <div class="transcript-head">
+        <span>Live transcript</span>
+        <button id="transcript-clear" class="btn-ghost small">Clear</button>
+      </div>
+      <div id="transcript-text" class="transcript-text"></div>
+    </div>
+
     <!-- Action bar -->
-    <div class="actions no-drag">
+    <div class="actions">
       <button class="action-btn" data-action="assist">Assist</button>
       <button class="action-btn" data-action="what_to_say">What to say</button>
       <button class="action-btn" data-action="follow_up">Follow-ups</button>
@@ -54,7 +67,7 @@
     </div>
 
     <!-- Attached screenshot preview -->
-    <div id="attachment-preview" class="attachment-preview no-drag hidden">
+    <div id="attachment-preview" class="attachment-preview hidden">
       <div class="attachment-thumb">
         <img id="attachment-thumb-img" src="" alt="Attached screenshot" />
         <button id="attachment-remove" class="attachment-remove" title="Remove screenshot">×</button>
@@ -63,9 +76,10 @@
     </div>
 
     <!-- Ask anything input -->
-    <form id="ask-form" class="ask-row no-drag">
-      <input id="ask-input" type="text" placeholder="Ask anything… (Ctrl+Shift+K)" autocomplete="off" />
-      <button type="submit" id="ask-send" class="send-btn">➤</button>
+    <form id="ask-form" class="ask-row">
+      <input id="ask-input" type="text" placeholder="Ask anything… (Ctrl+Shift+K)" autocomplete="off" maxlength="8000" />
+      <button type="button" id="btn-stop" class="stop-btn hidden" title="Stop generating">■</button>
+      <button type="submit" id="ask-send" class="send-btn" title="Send">➤</button>
     </form>
   </div>
 
@@ -97,8 +111,37 @@
         </section>
 
         <section>
-          <h3>Smart mode</h3>
-          <p class="muted">Off uses a fast, cheap model for quick answers. On switches to a stronger, slower model for tougher problems (e.g. coding, complex recaps).</p>
+          <h3>Models</h3>
+          <p class="muted">Smart mode off uses the fast model; on uses the smart one. Leave blank to use Ghost's default for this provider.</p>
+          <div class="field-grid">
+            <label for="model-fast">Fast</label>
+            <input id="model-fast" class="text-input" type="text" autocomplete="off" spellcheck="false" />
+            <label for="model-smart">Smart</label>
+            <input id="model-smart" class="text-input" type="text" autocomplete="off" spellcheck="false" />
+          </div>
+          <button id="models-save" class="btn-primary small">Save models</button>
+          <span id="models-status" class="inline-status"></span>
+        </section>
+
+        <section>
+          <h3>Conversation</h3>
+          <label class="checkbox-row">
+            <input type="checkbox" id="save-history" />
+            Remember chats after Ghost restarts (stored encrypted on this PC)
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="keep-transcript" />
+            Keep the audio transcript after Mic / Meeting is turned off (otherwise it's wiped)
+          </label>
+        </section>
+
+        <section>
+          <h3>Appearance</h3>
+          <label class="range-row">
+            Panel opacity
+            <input type="range" id="panel-opacity" min="0.2" max="1" step="0.02" />
+            <output id="panel-opacity-value" for="panel-opacity"></output>
+          </label>
         </section>
 
         <section>
@@ -112,6 +155,11 @@
             legitimate purposes (private notes, personal assistance,
             accessibility) and always follow your organization's and your
             meeting counterparts' policies on recording and AI use.
+          </p>
+          <p class="muted">
+            <b>Recording consent:</b> Meeting capture sends other people's
+            voices to your AI provider. Many places require everyone on a
+            call to agree before it's recorded or transcribed — ask first.
           </p>
           <label class="checkbox-row">
             <input type="checkbox" id="hide-from-capture" />
@@ -134,17 +182,11 @@
 
         <section>
           <h3>Shortcuts</h3>
-          <ul class="shortcut-list">
-            <li><kbd>Ctrl+Shift+G</kbd> Show / hide panel</li>
-            <li><kbd>Ctrl+Shift+A</kbd> Assist</li>
-            <li><kbd>Ctrl+Shift+W</kbd> What to say</li>
-            <li><kbd>Ctrl+Shift+F</kbd> Follow-up questions</li>
-            <li><kbd>Ctrl+Shift+R</kbd> Recap</li>
-            <li><kbd>Ctrl+Shift+K</kbd> Focus "Ask anything"</li>
-            <li><kbd>Ctrl+Shift+C</kbd> Solve coding problem on screen</li>
-            <li><kbd>Ctrl+Shift+S</kbd> Toggle Smart mode</li>
-            <li><kbd>Ctrl+Shift+X</kbd> Toggle click-through</li>
-          </ul>
+          <p class="muted">Use names like <kbd>CommandOrControl+Shift+G</kbd> or <kbd>Alt+F1</kbd>. Leave blank to turn a shortcut off.</p>
+          <div id="shortcut-list" class="shortcut-editor"></div>
+          <button id="shortcuts-save" class="btn-primary small">Save shortcuts</button>
+          <button id="shortcuts-reset" class="btn-ghost small">Reset to defaults</button>
+          <span id="shortcuts-status" class="inline-status"></span>
         </section>
 
         <button id="rerun-tutorial" class="btn-ghost full-width">Replay first-run tutorial</button>
@@ -158,9 +200,10 @@
   </div>
 
   <!-- Hidden capture helpers -->
-  <video id="capture-video" autoplay muted playsinline style="display:none"></video>
-  <canvas id="capture-canvas" style="display:none"></canvas>
+  <video id="capture-video" class="hidden-media" autoplay muted playsinline></video>
+  <canvas id="capture-canvas" class="hidden-media"></canvas>
 
+  <script src="markdown.js"></script>
   <script src="capture.js"></script>
   <script src="tutorial.js"></script>
   <script src="renderer.js"></script>

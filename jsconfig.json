@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "commonjs",
+    "checkJs": false,
+    "strict": false,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.js", "test/**/*.js"]
+}

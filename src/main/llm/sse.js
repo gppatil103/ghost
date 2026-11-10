@@ -39,7 +39,7 @@ async function readSSE(response, onEvent) {
   // trailing blank line before the connection closes.
   buffer += decoder.decode().replace(/\r\n/g, '\n');
   if (buffer.trim()) {
-    buffer = parseBufferedEvents(buffer + '\n\n', onEvent);
+    parseBufferedEvents(buffer + '\n\n', onEvent);
   }
 }
 

@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      electron:
+        patterns: ['electron', 'electron-builder', '@electron/*']
+      dev-tooling:
+        patterns: ['eslint', '@eslint/*', 'globals', 'prettier', 'vitest']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

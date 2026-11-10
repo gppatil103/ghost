@@ -1,28 +1,57 @@
 {
   "name": "ghost",
   "productName": "Ghost",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A floating glass-panel AI copilot for Windows. Bring your own API key.",
   "main": "src/main/main.js",
-  "author": "You",
+  "author": "gppatil103",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gppatil103/ghost.git"
+  },
+  "homepage": "https://github.com/gppatil103/ghost#readme",
+  "bugs": {
+    "url": "https://github.com/gppatil103/ghost/issues"
+  },
   "scripts": {
     "start": "electron .",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit": "npm audit --audit-level=high",
     "dist": "electron-builder --win nsis portable",
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8"
+    "@eslint/js": "^10.0.1",
+    "electron": "^44.9.3",
+    "electron-builder": "^26.17.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "vitest": "^4.1.12"
   },
   "build": {
-    "appId": "com.yourname.ghost",
+    "appId": "com.gppatil103.ghost",
     "productName": "Ghost",
     "files": [
       "src/**/*",
       "package.json"
     ],
+    "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
     "win": {
+      "icon": "src/renderer/assets/icon.png",
       "target": [
         { "target": "nsis", "arch": ["x64"] },
         { "target": "portable", "arch": ["x64"] }

@@ -2,35 +2,64 @@
   const $ = (sel) => document.querySelector(sel);
 
   const statusDot = $('#status-dot');
+  const recBadge = $('#rec-badge');
   const responseEl = $('#response');
   const smartToggle = $('#smart-toggle');
   const btnMic = $('#btn-mic');
   const btnMeeting = $('#btn-meeting');
   const btnScreen = $('#btn-screen');
+  const btnTranscript = $('#btn-transcript');
+  const transcriptPanel = $('#transcript-panel');
+  const transcriptText = $('#transcript-text');
   const captureHint = $('#capture-hint');
   const askForm = $('#ask-form');
   const askInput = $('#ask-input');
+  const askSend = $('#ask-send');
+  const btnStop = $('#btn-stop');
   const attachmentPreview = $('#attachment-preview');
   const attachmentThumbImg = $('#attachment-thumb-img');
   const attachmentRemove = $('#attachment-remove');
 
+  const MAX_HISTORY_TURNS = 20; // turns sent with each request
+  const MAX_STORED_TURNS = 200; // turns kept locally / persisted
+
   let settings = null;
-  let pendingScreenshotB64 = null; // set by "Screen" pill, consumed by next action
+  let pendingScreenshot = null; // { base64, mimeType } set by "Screen" pill, consumed by next action
   let reqCounter = 0;
+  let history = []; // [{ role: 'user' | 'assistant', text }]
+  let activeRequestId = null;
+  const requests = new Map(); // requestId -> { entry, text, retry }
+
+  const ACTION_LABELS = {
+    assist: 'Assist',
+    what_to_say: 'What to say',
+    follow_up: 'Follow-ups',
+    recap: 'Recap',
+    ask_anything: 'Ask anything',
+    solve_code: 'Solve coding problem',
+  };
+
+  // ipcRenderer.invoke wraps main-process errors; show just the message.
+  function ipcErrorMessage(err) {
+    return String((err && err.message) || err).replace(
+      /^Error invoking remote method '[^']+': (Error: )?/,
+      '',
+    );
+  }
 
   // ---------- attachment preview ----------
-  function showAttachmentPreview(base64) {
-    attachmentThumbImg.src = `data:image/png;base64,${base64}`;
+  function showAttachmentPreview(shot) {
+    attachmentThumbImg.src = `data:${shot.mimeType};base64,${shot.base64}`;
     attachmentPreview.classList.remove('hidden');
   }
 
   function hideAttachmentPreview() {
     attachmentPreview.classList.add('hidden');
-    attachmentThumbImg.src = '';
+    attachmentThumbImg.removeAttribute('src');
   }
 
   attachmentRemove.addEventListener('click', () => {
-    pendingScreenshotB64 = null;
+    pendingScreenshot = null;
     hideAttachmentPreview();
     btnScreen.classList.remove('on');
     captureHint.textContent = 'Screenshot removed.';
@@ -40,15 +69,22 @@
   async function boot() {
     settings = await window.ghost.getSettings();
     smartToggle.checked = !!settings.smartMode;
+    syncOpacityControls(settings.panelOpacity);
+    if (settings.saveHistory) {
+      history = await window.ghost.getHistory().catch(() => []);
+      restoreHistory();
+    }
     if (!settings.onboardingComplete) window.ghostTutorial.start();
   }
   boot();
 
   window.ghost.onShowTutorial(() => window.ghostTutorial.start());
+  window.ghost.onOpenSettings(() => openSettings());
 
   // ---------- header controls ----------
   $('#btn-minimize').addEventListener('click', () => window.ghost.hidePanel());
   $('#btn-close').addEventListener('click', () => window.ghost.quitApp());
+  $('#btn-new-chat').addEventListener('click', newChat);
 
   smartToggle.addEventListener('change', () => {
     settings.smartMode = smartToggle.checked;
@@ -59,17 +95,39 @@
     smartToggle.dispatchEvent(new Event('change'));
   });
 
+  function newChat() {
+    if (activeRequestId) window.ghost.cancelAction(activeRequestId);
+    history = [];
+    window.ghost.clearHistory();
+    window.ghostCapture.clearTranscript();
+    responseEl.replaceChildren(emptyState());
+    captureHint.textContent = 'New chat — Ghost has forgotten the previous conversation.';
+  }
+
+  function emptyState() {
+    const div = document.createElement('div');
+    div.className = 'empty-state';
+    div.textContent =
+      'Pick an action above, or type a question below. Ghost only sees your screen or hears audio when you turn on Screen / Mic / Meeting.';
+    return div;
+  }
+
   // ---------- capture pills ----------
+  function updateRecBadge() {
+    const on = window.ghostCapture.isMicOn() || window.ghostCapture.isMeetingOn();
+    recBadge.classList.toggle('hidden', !on);
+  }
+
   btnScreen.addEventListener('click', async () => {
     try {
       setStatus('busy');
       captureHint.textContent = 'Grabbing a screenshot…';
-      pendingScreenshotB64 = await window.ghostCapture.captureScreenshot();
-      captureHint.textContent = 'Screenshot captured — it\'ll be used on your next action.';
+      pendingScreenshot = await window.ghostCapture.captureScreenshot();
+      captureHint.textContent = "Screenshot captured — it'll be used on your next action.";
       btnScreen.classList.add('on');
-      showAttachmentPreview(pendingScreenshotB64);
+      showAttachmentPreview(pendingScreenshot);
       setStatus('active');
-    } catch (err) {
+    } catch {
       captureHint.textContent = 'Screenshot cancelled or blocked.';
       setStatus('idle');
     } finally {
@@ -77,42 +135,79 @@
     }
   });
 
+  function onCaptureStopped(source) {
+    if (!settings.keepTranscriptAfterStop) window.ghostCapture.clearTranscript(source);
+    updateRecBadge();
+  }
+
   btnMic.addEventListener('click', async () => {
     if (window.ghostCapture.isMicOn()) {
       window.ghostCapture.stopMic();
       btnMic.classList.remove('on');
-      captureHint.textContent = 'Mic stopped.';
+      captureHint.textContent = settings.keepTranscriptAfterStop
+        ? 'Mic stopped.'
+        : 'Mic stopped — its transcript was cleared.';
+      onCaptureStopped('mic');
       return;
     }
     try {
-      await window.ghostCapture.startMic(() => setStatus('active', true));
+      await window.ghostCapture.startMic(() => setStatus('active'));
       btnMic.classList.add('on');
       captureHint.textContent = 'Listening to your mic — click again to stop.';
       setStatus('active');
     } catch {
       captureHint.textContent = 'Mic permission was denied.';
     }
+    updateRecBadge();
   });
+  window.ghost.onToggleMic(() => btnMic.click());
 
   btnMeeting.addEventListener('click', async () => {
     if (window.ghostCapture.isMeetingOn()) {
       window.ghostCapture.stopMeeting();
       btnMeeting.classList.remove('on');
-      captureHint.textContent = 'Meeting audio stopped.';
+      captureHint.textContent = settings.keepTranscriptAfterStop
+        ? 'Meeting audio stopped.'
+        : 'Meeting audio stopped — its transcript was cleared.';
+      onCaptureStopped('meeting');
       return;
     }
     try {
-      await window.ghostCapture.startMeeting(() => setStatus('active', true));
+      await window.ghostCapture.startMeeting(() => setStatus('active'));
       btnMeeting.classList.add('on');
-      captureHint.textContent = 'Listening to meeting/system audio — click again to stop. See Settings for the Zoom note.';
+      captureHint.textContent =
+        'Transcribing meeting/system audio — make sure everyone on the call has agreed to this. Click again to stop.';
       setStatus('active');
     } catch {
       captureHint.textContent = 'Meeting-audio capture was cancelled or blocked.';
     }
+    updateRecBadge();
+  });
+
+  // ---------- live transcript viewer ----------
+  function renderTranscript() {
+    const text = window.ghostCapture.getCombinedTranscript();
+    transcriptText.textContent = text || 'Nothing transcribed yet. Turn on Mic or Meeting.';
+    transcriptText.scrollTop = transcriptText.scrollHeight;
+  }
+
+  btnTranscript.addEventListener('click', () => {
+    const show = transcriptPanel.classList.toggle('hidden') === false;
+    btnTranscript.classList.toggle('on', show);
+    if (show) renderTranscript();
+  });
+  $('#transcript-clear').addEventListener('click', () => window.ghostCapture.clearTranscript());
+  window.ghostCapture.onTranscriptChange(() => {
+    if (!transcriptPanel.classList.contains('hidden')) renderTranscript();
   });
 
   function setStatus(mode) {
     statusDot.className = 'dot' + (mode === 'busy' ? ' busy' : mode === 'active' ? ' active' : '');
+  }
+
+  function setBusy(busy) {
+    btnStop.classList.toggle('hidden', !busy);
+    askSend.disabled = busy;
   }
 
   // ---------- actions ----------
@@ -123,56 +218,136 @@
   askForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const q = askInput.value.trim();
-    if (!q) return;
+    if (!q || activeRequestId) return;
     askInput.value = '';
     runAction('ask_anything', q);
   });
 
+  btnStop.addEventListener('click', () => {
+    if (activeRequestId) window.ghost.cancelAction(activeRequestId);
+  });
+
   window.ghost.onTriggerAction((actionId) => {
-    if (actionId === 'ask_anything') { askInput.focus(); return; }
+    if (actionId === 'ask_anything') {
+      askInput.focus();
+      return;
+    }
     runAction(actionId);
   });
 
-  async function runAction(actionId, typedQuestion) {
+  // One set of stream listeners for the lifetime of the page; chunks are
+  // routed to their entry by requestId.
+  window.ghost.onStreamChunk(({ requestId, text }) => {
+    const req = requests.get(requestId);
+    if (!req) return;
+    req.text += text;
+    scheduleRender(req);
+  });
+
+  window.ghost.onStreamDone(({ requestId, meta }) => {
+    const req = requests.get(requestId);
+    if (!req) return;
+    renderBody(req, true);
+    finalizeEntry(req.entry, meta);
+    remember(req.userTurn, meta.fullText || req.text);
+    endRequest(requestId, 'active');
+  });
+
+  window.ghost.onStreamError((err) => {
+    const req = requests.get(err.requestId);
+    if (!req) return;
+    renderBody(req, true);
+    appendError(req, err.message, err.retryable, err.cancelled);
+    endRequest(err.requestId, err.cancelled ? 'active' : 'idle');
+  });
+
+  function endRequest(requestId, status) {
+    requests.delete(requestId);
+    if (activeRequestId === requestId) {
+      activeRequestId = null;
+      setBusy(false);
+    }
+    setStatus(status);
+  }
+
+  // What the user's side of this turn looks like in the conversation history.
+  function describeUserTurn(actionId, typedQuestion, hadImage, hadTranscript) {
+    if (typedQuestion) return typedQuestion;
+    const extras = [hadImage && 'a screenshot', hadTranscript && 'the audio transcript'].filter(Boolean);
+    return `[${ACTION_LABELS[actionId] || actionId}${extras.length ? ` using ${extras.join(' and ')}` : ''}]`;
+  }
+
+  function remember(userText, assistantText) {
+    if (!assistantText || !assistantText.trim()) return;
+    history.push({ role: 'user', text: userText }, { role: 'assistant', text: assistantText });
+    if (history.length > MAX_STORED_TURNS) history = history.slice(-MAX_STORED_TURNS);
+    if (settings.saveHistory)
+      window.ghost.saveHistory(history).catch((e) => console.warn('saving history failed', e));
+  }
+
+  async function runAction(actionId, typedQuestion, retryImage) {
+    if (activeRequestId) {
+      captureHint.textContent = 'Still answering — press ■ to stop first.';
+      return;
+    }
     clearEmptyState();
-    const requestId = `req_${++reqCounter}`;
+    const requestId = `req_${Date.now()}_${++reqCounter}`;
     const entry = createEntry(actionId, typedQuestion);
 
-    const payload = {
-      requestId,
-      action: actionId,
-      provider: settings.provider,
-      transcript: window.ghostCapture.getCombinedTranscript(),
-      userQuestion: typedQuestion || '',
-      imageBase64: pendingScreenshotB64 || undefined,
-    };
+    let image = retryImage || pendingScreenshot;
 
     // "Solve coding problem" always wants a fresh screenshot if we don't
     // already have one queued, since it's meaningless without the screen.
-    if (actionId === 'solve_code' && !payload.imageBase64) {
+    if (actionId === 'solve_code' && !image) {
       try {
         setStatus('busy');
-        payload.imageBase64 = await window.ghostCapture.captureScreenshot();
+        image = await window.ghostCapture.captureScreenshot();
       } catch {
-        appendToEntry(entry, '\n\n_Couldn\'t capture the screen — screen-share permission was blocked or cancelled._');
+        appendError(
+          { entry },
+          "Couldn't capture the screen — screen-share permission was blocked or cancelled.",
+          false,
+        );
         setStatus('idle');
         return;
       }
     }
 
-    pendingScreenshotB64 = null; // consume
+    pendingScreenshot = null; // consume
     hideAttachmentPreview();
 
+    const transcript = window.ghostCapture.getCombinedTranscript();
+    const payload = {
+      requestId,
+      action: actionId,
+      transcript,
+      userQuestion: typedQuestion || '',
+      imageBase64: image ? image.base64 : undefined,
+      imageMimeType: image ? image.mimeType : undefined,
+      history: history.slice(-MAX_HISTORY_TURNS),
+    };
+
+    const req = {
+      entry,
+      text: '',
+      renderQueued: false,
+      userTurn: describeUserTurn(actionId, typedQuestion, !!image, !!transcript),
+      retry: () => runAction(actionId, typedQuestion, image),
+    };
+    requests.set(requestId, req);
+    activeRequestId = requestId;
+    setBusy(true);
     setStatus('busy');
-    const chunkHandler = (data) => { if (data.requestId === requestId) appendToEntry(entry, data.text); };
-    const doneHandler = (data) => { if (data.requestId === requestId) { setStatus('active'); finalizeEntry(entry, data.meta); } };
-    const errHandler = (data) => { if (data.requestId === requestId) { setStatus('idle'); appendError(entry, data.message); } };
 
-    window.ghost.onStreamChunk(chunkHandler);
-    window.ghost.onStreamDone(doneHandler);
-    window.ghost.onStreamError(errHandler);
-
-    await window.ghost.runAction(payload);
+    try {
+      await window.ghost.runAction(payload);
+    } catch (err) {
+      // Rejected before streaming started (validation, rate limit, …).
+      if (requests.has(requestId)) {
+        appendError(req, ipcErrorMessage(err), false);
+        endRequest(requestId, 'idle');
+      }
+    }
   }
 
   // ---------- response rendering ----------
@@ -181,44 +356,132 @@
     if (empty) empty.remove();
   }
 
-  const ACTION_LABELS = {
-    assist: 'Assist', what_to_say: 'What to say', follow_up: 'Follow-ups',
-    recap: 'Recap', ask_anything: 'Ask anything', solve_code: 'Solve coding problem',
-  };
-
   function createEntry(actionId, typedQuestion) {
     const div = document.createElement('div');
     div.className = 'entry';
-    const escaped = (typedQuestion || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const userLine = typedQuestion ? `<div class="user-msg">${escaped}</div>` : '';
-    div.innerHTML = `<span class="tag">${ACTION_LABELS[actionId] || actionId}</span>${userLine}<div class="body"><span class="cursor-blink"></span></div>`;
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = ACTION_LABELS[actionId] || 'Ghost';
+    div.appendChild(tag);
+    if (typedQuestion) {
+      const user = document.createElement('div');
+      user.className = 'user-msg';
+      user.textContent = typedQuestion;
+      div.appendChild(user);
+    }
+    const body = document.createElement('div');
+    body.className = 'body';
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor-blink';
+    body.appendChild(cursor);
+    div.appendChild(body);
     responseEl.appendChild(div);
     responseEl.scrollTop = responseEl.scrollHeight;
     return div;
   }
 
-  function appendToEntry(entry, text) {
-    if (!text) return;
-    const body = entry.querySelector('.body');
-    const cursor = body.querySelector('.cursor-blink');
-    const textNode = document.createTextNode(text);
-    if (cursor) body.insertBefore(textNode, cursor);
-    else body.appendChild(textNode);
+  function copyText(text, btn) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        btn.textContent = 'Copied';
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+        }, 1200);
+      })
+      .catch(() => {
+        btn.textContent = 'Copy failed';
+      });
+  }
+
+  function renderMarkdownInto(body, text) {
+    const md = window.ghostMarkdown;
+    body.replaceChildren(md.render(document, md.parse(text), { onCopy: copyText }));
+  }
+
+  // Re-render at most once per animation frame while streaming.
+  function scheduleRender(req) {
+    if (req.renderQueued) return;
+    req.renderQueued = true;
+    requestAnimationFrame(() => {
+      req.renderQueued = false;
+      renderBody(req, false);
+    });
+  }
+
+  function renderBody(req, final) {
+    const body = req.entry.querySelector('.body');
+    const nearBottom = responseEl.scrollHeight - responseEl.scrollTop - responseEl.clientHeight < 40;
+    renderMarkdownInto(body, req.text);
+    if (!final) {
+      const cursor = document.createElement('span');
+      cursor.className = 'cursor-blink';
+      (body.lastElementChild && body.lastElementChild.tagName === 'P'
+        ? body.lastElementChild
+        : body
+      ).appendChild(cursor);
+    }
+    if (nearBottom) responseEl.scrollTop = responseEl.scrollHeight;
+  }
+
+  function formatTokens(n) {
+    return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+  }
+
+  function finalizeEntry(entry, meta) {
+    const cursor = entry.querySelector('.cursor-blink');
+    if (cursor) cursor.remove();
+    if (!meta) return;
+    const info = document.createElement('div');
+    info.className = 'meta';
+    const parts = [meta.model];
+    const u = meta.usage || {};
+    if (Number.isFinite(u.inputTokens) || Number.isFinite(u.outputTokens)) {
+      parts.push(`${formatTokens(u.inputTokens || 0)} in · ${formatTokens(u.outputTokens || 0)} out tokens`);
+    }
+    info.textContent = parts.join(' — ');
+    entry.appendChild(info);
+  }
+
+  function appendError(req, message, retryable, cancelled) {
+    const entry = req.entry;
+    finalizeEntry(entry);
+    const div = document.createElement('div');
+    div.className = cancelled ? 'stopped' : 'err';
+    div.textContent = cancelled ? '■ Stopped.' : `⚠ ${message}`;
+    if (retryable && req.retry) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-ghost small retry-btn';
+      btn.textContent = 'Retry';
+      btn.addEventListener('click', () => {
+        btn.remove();
+        req.retry();
+      });
+      div.appendChild(btn);
+    }
+    entry.appendChild(div);
     responseEl.scrollTop = responseEl.scrollHeight;
   }
 
-  function finalizeEntry(entry) {
-    const cursor = entry.querySelector('.cursor-blink');
-    if (cursor) cursor.remove();
-  }
-
-  function appendError(entry, message) {
-    finalizeEntry(entry);
-    const body = entry.querySelector('.body');
-    const span = document.createElement('div');
-    span.className = 'err';
-    span.textContent = `⚠ ${message}`;
-    body.appendChild(span);
+  // Re-draw a persisted conversation after a restart.
+  function restoreHistory() {
+    if (!history.length) return;
+    clearEmptyState();
+    for (let i = 0; i < history.length; i++) {
+      const turn = history[i];
+      if (turn.role !== 'user') continue;
+      const reply = history[i + 1] && history[i + 1].role === 'assistant' ? history[i + 1].text : '';
+      const typed = turn.text.startsWith('[') ? '' : turn.text;
+      const entry = createEntry(typed ? 'ask_anything' : null, typed);
+      if (!typed) entry.querySelector('.tag').textContent = turn.text.slice(1, -1);
+      renderMarkdownInto(entry.querySelector('.body'), reply);
+    }
+    const note = document.createElement('div');
+    note.className = 'history-note';
+    note.textContent = 'Restored from your last session — press ＋ for a new chat.';
+    responseEl.appendChild(note);
+    responseEl.scrollTop = responseEl.scrollHeight;
   }
 
   // ---------- settings sheet ----------
@@ -227,21 +490,67 @@
   const keyInput = $('#key-input');
   const keyStatus = $('#key-status');
   const hideFromCapture = $('#hide-from-capture');
+  const saveHistoryBox = $('#save-history');
+  const keepTranscriptBox = $('#keep-transcript');
+  const opacityRange = $('#panel-opacity');
+  const quickOpacity = $('#quick-opacity');
+  const opacityValue = $('#panel-opacity-value');
+  const modelFast = $('#model-fast');
+  const modelSmart = $('#model-smart');
+  const modelsStatus = $('#models-status');
+  const shortcutList = $('#shortcut-list');
+  const shortcutsStatus = $('#shortcuts-status');
+
+  const SHORTCUT_LABELS = {
+    toggle_window: 'Show / hide panel',
+    assist: 'Assist',
+    what_to_say: 'What to say',
+    follow_up: 'Follow-up questions',
+    recap: 'Recap',
+    ask_anything: 'Focus "Ask anything"',
+    solve_code: 'Solve coding problem',
+    toggle_smart: 'Toggle Smart mode',
+    toggle_clickthrough: 'Toggle click-through',
+    toggle_mic: 'Toggle mic',
+  };
 
   $('#btn-settings').addEventListener('click', openSettings);
   $('#settings-close').addEventListener('click', () => settingsOverlay.classList.add('hidden'));
 
+  function setStatusText(el, text, ok) {
+    el.textContent = text;
+    el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+  }
+
   async function openSettings() {
+    settings = await window.ghost.getSettings();
     settingsOverlay.classList.remove('hidden');
     providerSelect.value = settings.provider;
     hideFromCapture.checked = !!settings.hideFromCapture;
+    saveHistoryBox.checked = !!settings.saveHistory;
+    keepTranscriptBox.checked = !!settings.keepTranscriptAfterStop;
+    syncOpacityControls(settings.panelOpacity);
+    modelsStatus.textContent = '';
+    shortcutsStatus.textContent = '';
+    fillModelInputs();
     await refreshKeyStatus();
+    await renderShortcuts();
+  }
+
+  async function saveSetting(patch) {
+    try {
+      settings = await window.ghost.setSettings(patch);
+      return true;
+    } catch (err) {
+      captureHint.textContent = `⚠ ${ipcErrorMessage(err)}`;
+      return false;
+    }
   }
 
   providerSelect.addEventListener('change', async () => {
-    settings.provider = providerSelect.value;
-    await window.ghost.setSettings({ provider: settings.provider });
+    await saveSetting({ provider: providerSelect.value });
     keyInput.value = '';
+    fillModelInputs();
     await refreshKeyStatus();
   });
 
@@ -259,8 +568,7 @@
       keyInput.value = '';
       await refreshKeyStatus();
     } catch (err) {
-      keyStatus.textContent = `⚠ ${err.message || err}`;
-      keyStatus.style.color = 'var(--danger)';
+      setStatusText(keyStatus, `⚠ ${ipcErrorMessage(err)}`, false);
     }
   });
 
@@ -269,8 +577,98 @@
     await refreshKeyStatus();
   });
 
-  hideFromCapture.addEventListener('change', () => {
-    window.ghost.setSettings({ hideFromCapture: hideFromCapture.checked });
+  function fillModelInputs() {
+    const o = (settings.models || {})[providerSelect.value] || {};
+    modelFast.value = o.fast || '';
+    modelSmart.value = o.smart || '';
+    modelFast.placeholder = modelSmart.placeholder = 'Ghost default';
+  }
+
+  $('#models-save').addEventListener('click', async () => {
+    const models = { ...(settings.models || {}) };
+    models[providerSelect.value] = { fast: modelFast.value.trim(), smart: modelSmart.value.trim() };
+    try {
+      settings = await window.ghost.setSettings({ models });
+      setStatusText(modelsStatus, '✓ Saved', true);
+    } catch (err) {
+      setStatusText(modelsStatus, `⚠ ${ipcErrorMessage(err)}`, false);
+    }
+  });
+
+  hideFromCapture.addEventListener('change', () => saveSetting({ hideFromCapture: hideFromCapture.checked }));
+  keepTranscriptBox.addEventListener('change', () =>
+    saveSetting({ keepTranscriptAfterStop: keepTranscriptBox.checked }),
+  );
+
+  function syncOpacityControls(value) {
+    opacityRange.value = String(value);
+    quickOpacity.value = String(value);
+    opacityValue.textContent = `${Math.round(value * 100)}%`;
+  }
+
+  // 'input' rather than 'change', so the panel fades as the slider moves.
+  [opacityRange, quickOpacity].forEach((slider) => {
+    slider.addEventListener('input', () => {
+      const value = Number(slider.value);
+      syncOpacityControls(value);
+      saveSetting({ panelOpacity: value });
+    });
+  });
+
+  saveHistoryBox.addEventListener('change', async () => {
+    const ok = await saveSetting({ saveHistory: saveHistoryBox.checked });
+    if (ok && saveHistoryBox.checked && history.length) window.ghost.saveHistory(history);
+  });
+
+  async function renderShortcuts() {
+    const status = await window.ghost.getShortcutStatus();
+    shortcutList.replaceChildren();
+    for (const [cmd, label] of Object.entries(SHORTCUT_LABELS)) {
+      const row = document.createElement('div');
+      row.className = 'shortcut-row';
+      const name = document.createElement('label');
+      name.textContent = label;
+      name.htmlFor = `sc-${cmd}`;
+      const input = document.createElement('input');
+      input.id = `sc-${cmd}`;
+      input.className = 'text-input';
+      input.dataset.cmd = cmd;
+      input.spellcheck = false;
+      input.value = (settings.shortcuts || {})[cmd] || '';
+      input.placeholder = 'off';
+      const err = document.createElement('div');
+      err.className = 'shortcut-err';
+      const s = status[cmd];
+      if (s && !s.ok) err.textContent = `⚠ ${s.error}`;
+      row.append(name, input, err);
+      shortcutList.appendChild(row);
+    }
+  }
+
+  $('#shortcuts-save').addEventListener('click', async () => {
+    const shortcuts = {};
+    shortcutList.querySelectorAll('input[data-cmd]').forEach((input) => {
+      shortcuts[input.dataset.cmd] = input.value.trim().replace(/\s*\+\s*/g, '+');
+    });
+    try {
+      settings = await window.ghost.setSettings({ shortcuts });
+      await renderShortcuts();
+      const status = await window.ghost.getShortcutStatus();
+      const failed = Object.values(status).filter((s) => !s.ok).length;
+      setStatusText(
+        shortcutsStatus,
+        failed ? `${failed} shortcut(s) couldn't be registered` : '✓ Saved',
+        !failed,
+      );
+    } catch (err) {
+      setStatusText(shortcutsStatus, `⚠ ${ipcErrorMessage(err)}`, false);
+    }
+  });
+
+  $('#shortcuts-reset').addEventListener('click', async () => {
+    settings = await window.ghost.setSettings({ shortcuts: {} });
+    await renderShortcuts();
+    setStatusText(shortcutsStatus, '✓ Reset to defaults', true);
   });
 
   $('#rerun-tutorial').addEventListener('click', () => {
