@@ -2,6 +2,22 @@
 
 All notable changes to Ghost are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — Apple-style redesign
+
+Renderer redesign; same features. Design: [docs/superpowers/specs/2026-11-10-ghost-apple-redesign-design.md](docs/superpowers/specs/2026-11-10-ghost-apple-redesign-design.md).
+
+### Changed
+- Decluttered fixed panel: compact title bar with icon capture toggles (Mic, Meeting, Screen, Transcript), a scrollable row of action chips, and a floating glass input bar that answers scroll under.
+- Status messages appear as a short-lived toast instead of a permanent hint line.
+- Settings is now a bottom sheet with tabs: AI · Look · Privacy · Keys. Long privacy and Zoom notes are folded under "Learn more".
+- The opacity slider moved from the header to Settings → Look.
+- Inline SVG icons replace emoji; system font with size-specific tracking; spring-curve motion (CSS `linear()` easing), press feedback on pointer-down.
+- Respects Windows "reduce motion", reduced transparency and high-contrast preferences.
+
+### Added
+- Accent color setting (Blue, Violet, Green, Orange), validated in the main process.
+- Copy / Retry row under each answer.
+
 ## [1.1.0] — 2026-10-27
 
 Security hardening and quality release; addresses every item in [SECURITY_REVIEW.md](SECURITY_REVIEW.md).

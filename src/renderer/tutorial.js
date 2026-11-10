@@ -4,7 +4,7 @@
 
   const steps = [
     {
-      title: 'Welcome to Ghost 👋',
+      title: 'Welcome to Ghost',
       body: `Ghost is a small floating panel that can help you while you
 work — look at your screen when you ask, listen to your mic, and hear
 meeting audio, so it can assist in real time. Nothing happens
@@ -15,21 +15,22 @@ automatically: you turn each input on and off yourself.`,
       body: `Ghost is bring-your-own-key: it needs an API key from OpenAI,
 Anthropic, or Google Gemini to think. Your key is encrypted and stored only
 on this PC — it's never sent anywhere except directly to the provider you
-choose. You can add or change it any time from Settings (⚙).`,
+choose. Add or change it any time in Settings (gear icon) → AI tab.`,
     },
     {
       title: 'Screen, mic, and meeting audio',
-      body: `Click the "Screen" pill to let Ghost see a single screenshot
-when you ask it something. Click "Mic" or "Meeting" to start a rolling,
-short-term transcript of your voice or system audio — useful during a call
-or while working through a problem out loud. Turn any of these off any
-time; Ghost never listens or looks in the background by default.`,
+      body: `Use the capture icons in the title bar. The screen icon lets
+Ghost see a single screenshot when you ask it something. The mic and speaker
+icons start a rolling, short-term transcript of your voice or system audio —
+useful during a call or while working through a problem out loud. An icon is
+filled while it's on; click it again to turn it off. Ghost never listens or
+looks in the background by default.`,
     },
     {
       title: 'What gets captured',
       body: `Screen grabs a single still image of your main display — only at
-the moment you click it (or run "Solve coding problem"). Meeting listens
-to your PC's system audio until you turn it off; a red ● REC badge shows
+the moment you click it (or run "Solve code"). Meeting listens
+to your PC's system audio until you turn it off; a red REC badge shows
 while Mic or Meeting is on. For Mic, Windows may show a one-time
 microphone permission prompt. Other people's voices are sent to your AI
 provider, so get their consent before transcribing a call.`,
@@ -37,7 +38,7 @@ provider, so get their consent before transcribing a call.`,
     {
       title: 'A note on privacy and honesty',
       body: `Ghost can attempt to hide its own window from screen-shares and
-recordings on Windows (off by default — toggle it in Settings). This is best-effort only — it
+recordings on Windows (off by default — toggle it in Settings → Privacy). This is best-effort only — it
 is not guaranteed to work in every app and can be defeated by OS updates or
 recording tools. Please only use this for legitimate purposes, like private
 note-taking or personal assistance, and follow your organization's and
@@ -56,8 +57,8 @@ switch to your normal speaker output first.`,
       body: `Ctrl+Shift+G shows/hides the panel. Ctrl+Shift+A is Assist,
 Ctrl+Shift+C solves a coding problem on screen, Ctrl+Shift+K jumps to "Ask
 anything", Ctrl+Shift+L toggles the mic. Ghost remembers the conversation
-until you press ＋ for a new chat. You can change every shortcut in
-Settings. You're all set — have fun.`,
+until you press + for a new chat. You can change every shortcut in
+Settings → Keys. You're all set — have fun.`,
     },
   ];
 
@@ -84,22 +85,27 @@ Settings. You're all set — have fun.`,
     skip.addEventListener('click', finish);
     next.addEventListener('click', () => {
       if (idx === steps.length - 1) finish();
-      else { idx++; render(); }
+      else {
+        idx++;
+        render();
+      }
     });
     nav.append(skip, next);
 
     sheet.replaceChildren(step, dots, nav);
   }
 
+  // window.ghostUI is defined by renderer.js, which loads after this file,
+  // so it is looked up at call time.
   function finish() {
-    overlay.classList.add('hidden');
+    window.ghostUI.closeOverlay(overlay);
     window.ghost.completeOnboarding();
   }
 
   function start() {
     idx = 0;
-    overlay.classList.remove('hidden');
     render();
+    window.ghostUI.openOverlay(overlay);
   }
 
   window.ghostTutorial = { start };

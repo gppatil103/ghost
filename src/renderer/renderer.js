@@ -47,6 +47,49 @@
     );
   }
 
+  // ---------- toast (transient status line) ----------
+  let toastTimer = null;
+  function showToast(text) {
+    clearTimeout(toastTimer);
+    captureHint.textContent = text;
+    captureHint.classList.add('show');
+    // Warnings and the consent reminder stay up longer.
+    const ms = /⚠|agreed/.test(text) ? 8000 : 4000;
+    toastTimer = setTimeout(() => captureHint.classList.remove('show'), ms);
+  }
+
+  // ---------- accent ----------
+  const ACCENTS = { blue: '#5b8cff', violet: '#9b7bff', green: '#34c77b', orange: '#ff9f43' };
+  function applyAccent(id) {
+    const key = Object.hasOwn(ACCENTS, id) ? id : 'blue';
+    document.documentElement.style.setProperty('--accent', ACCENTS[key] || ACCENTS.blue);
+    document.querySelectorAll('.swatch').forEach((s) => {
+      s.setAttribute('aria-checked', String(s.dataset.accent === key));
+    });
+  }
+
+  // ---------- overlays (sheet enter/exit along the same path) ----------
+  function openOverlay(el) {
+    el.hidden = false;
+    void el.offsetWidth; // commit the start state so the transition runs
+    el.classList.add('open');
+  }
+
+  function closeOverlay(el) {
+    if (el.hidden) return;
+    el.classList.remove('open');
+    const sheet = el.querySelector('.sheet');
+    let done = false;
+    const finish = () => {
+      if (done || el.classList.contains('open')) return;
+      done = true;
+      el.hidden = true;
+    };
+    sheet.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 400); // fallback if no transition fires
+  }
+  window.ghostUI = { openOverlay, closeOverlay };
+
   // ---------- attachment preview ----------
   function showAttachmentPreview(shot) {
     attachmentThumbImg.src = `data:${shot.mimeType};base64,${shot.base64}`;
@@ -62,13 +105,14 @@
     pendingScreenshot = null;
     hideAttachmentPreview();
     btnScreen.classList.remove('on');
-    captureHint.textContent = 'Screenshot removed.';
+    showToast('Screenshot removed.');
   });
 
   // ---------- boot ----------
   async function boot() {
     settings = await window.ghost.getSettings();
     smartToggle.checked = !!settings.smartMode;
+    applyAccent(settings.accent);
     syncOpacityControls(settings.panelOpacity);
     if (settings.saveHistory) {
       history = await window.ghost.getHistory().catch(() => []);
@@ -101,34 +145,40 @@
     window.ghost.clearHistory();
     window.ghostCapture.clearTranscript();
     responseEl.replaceChildren(emptyState());
-    captureHint.textContent = 'New chat — Ghost has forgotten the previous conversation.';
+    showToast('New chat — Ghost has forgotten the previous conversation.');
   }
 
   function emptyState() {
     const div = document.createElement('div');
     div.className = 'empty-state';
     div.textContent =
-      'Pick an action above, or type a question below. Ghost only sees your screen or hears audio when you turn on Screen / Mic / Meeting.';
+      'Ask anything, or pick an action above. Ghost only sees your screen or hears audio when you turn on a capture icon.';
     return div;
   }
 
-  // ---------- capture pills ----------
+  // ---------- capture toggles ----------
+  // REC badge and the transcript button only exist while audio is being captured.
+  // Any transcript text is sent with every action, so its button stays visible
+  // (to view or Clear it) while capture is on or text remains.
   function updateRecBadge() {
     const on = window.ghostCapture.isMicOn() || window.ghostCapture.isMeetingOn();
+    const hasText = !!window.ghostCapture.getCombinedTranscript();
     recBadge.classList.toggle('hidden', !on);
+    btnTranscript.hidden = !(on || hasText);
+    if (btnTranscript.hidden) setTranscriptOpen(false);
   }
 
   btnScreen.addEventListener('click', async () => {
     try {
       setStatus('busy');
-      captureHint.textContent = 'Grabbing a screenshot…';
+      showToast('Grabbing a screenshot…');
       pendingScreenshot = await window.ghostCapture.captureScreenshot();
-      captureHint.textContent = "Screenshot captured — it'll be used on your next action.";
+      showToast("Screenshot captured — it'll be used on your next action.");
       btnScreen.classList.add('on');
       showAttachmentPreview(pendingScreenshot);
       setStatus('active');
     } catch {
-      captureHint.textContent = 'Screenshot cancelled or blocked.';
+      showToast('Screenshot cancelled or blocked.');
       setStatus('idle');
     } finally {
       setTimeout(() => btnScreen.classList.remove('on'), 1500);
@@ -144,19 +194,19 @@
     if (window.ghostCapture.isMicOn()) {
       window.ghostCapture.stopMic();
       btnMic.classList.remove('on');
-      captureHint.textContent = settings.keepTranscriptAfterStop
-        ? 'Mic stopped.'
-        : 'Mic stopped — its transcript was cleared.';
+      showToast(
+        settings.keepTranscriptAfterStop ? 'Mic stopped.' : 'Mic stopped — its transcript was cleared.',
+      );
       onCaptureStopped('mic');
       return;
     }
     try {
       await window.ghostCapture.startMic(() => setStatus('active'));
       btnMic.classList.add('on');
-      captureHint.textContent = 'Listening to your mic — click again to stop.';
+      showToast('Listening to your mic — click again to stop.');
       setStatus('active');
     } catch {
-      captureHint.textContent = 'Mic permission was denied.';
+      showToast('⚠ Mic permission was denied.');
     }
     updateRecBadge();
   });
@@ -166,20 +216,23 @@
     if (window.ghostCapture.isMeetingOn()) {
       window.ghostCapture.stopMeeting();
       btnMeeting.classList.remove('on');
-      captureHint.textContent = settings.keepTranscriptAfterStop
-        ? 'Meeting audio stopped.'
-        : 'Meeting audio stopped — its transcript was cleared.';
+      showToast(
+        settings.keepTranscriptAfterStop
+          ? 'Meeting audio stopped.'
+          : 'Meeting audio stopped — its transcript was cleared.',
+      );
       onCaptureStopped('meeting');
       return;
     }
     try {
       await window.ghostCapture.startMeeting(() => setStatus('active'));
       btnMeeting.classList.add('on');
-      captureHint.textContent =
-        'Transcribing meeting/system audio — make sure everyone on the call has agreed to this. Click again to stop.';
+      showToast(
+        'Transcribing meeting/system audio — make sure everyone on the call has agreed to this. Click again to stop.',
+      );
       setStatus('active');
     } catch {
-      captureHint.textContent = 'Meeting-audio capture was cancelled or blocked.';
+      showToast('Meeting-audio capture was cancelled or blocked.');
     }
     updateRecBadge();
   });
@@ -191,22 +244,40 @@
     transcriptText.scrollTop = transcriptText.scrollHeight;
   }
 
-  btnTranscript.addEventListener('click', () => {
-    const show = transcriptPanel.classList.toggle('hidden') === false;
-    btnTranscript.classList.toggle('on', show);
-    if (show) renderTranscript();
-  });
+  function setTranscriptOpen(open) {
+    transcriptPanel.classList.toggle('open', open);
+    btnTranscript.classList.toggle('on', open);
+    if (open) renderTranscript();
+  }
+
+  btnTranscript.addEventListener('click', () =>
+    setTranscriptOpen(!transcriptPanel.classList.contains('open')),
+  );
   $('#transcript-clear').addEventListener('click', () => window.ghostCapture.clearTranscript());
   window.ghostCapture.onTranscriptChange(() => {
-    if (!transcriptPanel.classList.contains('hidden')) renderTranscript();
+    if (transcriptPanel.classList.contains('open')) renderTranscript();
+    updateRecBadge();
   });
+
+  // A plain mouse wheel scrolls the horizontal chip row (Chromium only maps
+  // Shift+wheel to horizontal scrolling on its own).
+  const chips = $('.chips');
+  chips.addEventListener(
+    'wheel',
+    (e) => {
+      if (e.deltaX !== 0 || chips.scrollWidth <= chips.clientWidth) return;
+      chips.scrollLeft += e.deltaY;
+      e.preventDefault();
+    },
+    { passive: false },
+  );
 
   function setStatus(mode) {
     statusDot.className = 'dot' + (mode === 'busy' ? ' busy' : mode === 'active' ? ' active' : '');
   }
 
   function setBusy(busy) {
-    btnStop.classList.toggle('hidden', !busy);
+    askForm.classList.toggle('busy', busy); // CSS cross-fades Send ⇄ Stop
     askSend.disabled = busy;
   }
 
@@ -248,7 +319,7 @@
     const req = requests.get(requestId);
     if (!req) return;
     renderBody(req, true);
-    finalizeEntry(req.entry, meta);
+    finalizeEntry(req.entry, meta, { text: meta.fullText || req.text, retry: req.retry });
     remember(req.userTurn, meta.fullText || req.text);
     endRequest(requestId, 'active');
   });
@@ -287,7 +358,7 @@
 
   async function runAction(actionId, typedQuestion, retryImage) {
     if (activeRequestId) {
-      captureHint.textContent = 'Still answering — press ■ to stop first.';
+      showToast('Still answering — press Stop first.');
       return;
     }
     clearEmptyState();
@@ -428,7 +499,7 @@
     return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
   }
 
-  function finalizeEntry(entry, meta) {
+  function finalizeEntry(entry, meta, tools) {
     const cursor = entry.querySelector('.cursor-blink');
     if (cursor) cursor.remove();
     if (!meta) return;
@@ -441,6 +512,52 @@
     }
     info.textContent = parts.join(' — ');
     entry.appendChild(info);
+    if (tools) addAnswerTools(entry, tools);
+  }
+
+  function svgIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#i-${name}`);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  function toolButton(icon, label, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tool-btn';
+    const text = document.createElement('span');
+    text.textContent = label;
+    btn.append(svgIcon(icon), text);
+    btn.addEventListener('click', () => onClick(text));
+    return btn;
+  }
+
+  // Copy / Retry row under an answer. `retry` is omitted for restored history.
+  function addAnswerTools(entry, { text, retry }) {
+    const row = document.createElement('div');
+    row.className = 'answer-tools';
+    row.appendChild(
+      toolButton('copy', 'Copy', (label) => {
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            label.textContent = 'Copied';
+            setTimeout(() => {
+              label.textContent = 'Copy';
+            }, 1200);
+          })
+          .catch(() => {
+            label.textContent = 'Copy failed';
+          });
+      }),
+    );
+    if (retry) row.appendChild(toolButton('retry', 'Retry', () => retry()));
+    entry.appendChild(row);
+    responseEl.querySelectorAll('.entry.latest').forEach((e) => e.classList.remove('latest'));
+    entry.classList.add('latest');
   }
 
   function appendError(req, message, retryable, cancelled) {
@@ -476,6 +593,8 @@
       const entry = createEntry(typed ? 'ask_anything' : null, typed);
       if (!typed) entry.querySelector('.tag').textContent = turn.text.slice(1, -1);
       renderMarkdownInto(entry.querySelector('.body'), reply);
+      entry.querySelector('.cursor-blink')?.remove();
+      if (reply) addAnswerTools(entry, { text: reply });
     }
     const note = document.createElement('div');
     note.className = 'history-note';
@@ -493,7 +612,6 @@
   const saveHistoryBox = $('#save-history');
   const keepTranscriptBox = $('#keep-transcript');
   const opacityRange = $('#panel-opacity');
-  const quickOpacity = $('#quick-opacity');
   const opacityValue = $('#panel-opacity-value');
   const modelFast = $('#model-fast');
   const modelSmart = $('#model-smart');
@@ -515,7 +633,50 @@
   };
 
   $('#btn-settings').addEventListener('click', openSettings);
-  $('#settings-close').addEventListener('click', () => settingsOverlay.classList.add('hidden'));
+  $('#settings-close').addEventListener('click', () => closeOverlay(settingsOverlay));
+  settingsOverlay.addEventListener('click', (e) => {
+    if (e.target === settingsOverlay) closeOverlay(settingsOverlay); // tap the scrim
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && settingsOverlay.classList.contains('open')) closeOverlay(settingsOverlay);
+  });
+
+  // ---------- settings tabs (segmented control) ----------
+  const TABS = ['ai', 'look', 'privacy', 'keys'];
+  const segmented = $('.segmented');
+  let lastTab = 'ai';
+
+  function selectTab(name) {
+    lastTab = name;
+    segmented.style.setProperty('--seg-index', String(TABS.indexOf(name)));
+    segmented.querySelectorAll('.seg').forEach((b) => {
+      const on = b.dataset.tab === name;
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    document
+      .querySelectorAll('.tab-page')
+      .forEach((p) => p.classList.toggle('active', p.dataset.tab === name));
+  }
+
+  segmented
+    .querySelectorAll('.seg')
+    .forEach((b) => b.addEventListener('click', () => selectTab(b.dataset.tab)));
+  segmented.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    const next = TABS[(TABS.indexOf(lastTab) + step + TABS.length) % TABS.length];
+    selectTab(next);
+    segmented.querySelector(`.seg[data-tab="${next}"]`).focus();
+  });
+
+  // ---------- accent swatches ----------
+  document.querySelectorAll('.swatch').forEach((s) =>
+    s.addEventListener('click', () => {
+      applyAccent(s.dataset.accent);
+      saveSetting({ accent: s.dataset.accent });
+    }),
+  );
 
   function setStatusText(el, text, ok) {
     el.textContent = text;
@@ -524,7 +685,9 @@
 
   async function openSettings() {
     settings = await window.ghost.getSettings();
-    settingsOverlay.classList.remove('hidden');
+    selectTab(lastTab);
+    openOverlay(settingsOverlay);
+    applyAccent(settings.accent);
     providerSelect.value = settings.provider;
     hideFromCapture.checked = !!settings.hideFromCapture;
     saveHistoryBox.checked = !!settings.saveHistory;
@@ -542,7 +705,7 @@
       settings = await window.ghost.setSettings(patch);
       return true;
     } catch (err) {
-      captureHint.textContent = `⚠ ${ipcErrorMessage(err)}`;
+      showToast(`⚠ ${ipcErrorMessage(err)}`);
       return false;
     }
   }
@@ -602,17 +765,14 @@
 
   function syncOpacityControls(value) {
     opacityRange.value = String(value);
-    quickOpacity.value = String(value);
     opacityValue.textContent = `${Math.round(value * 100)}%`;
   }
 
   // 'input' rather than 'change', so the panel fades as the slider moves.
-  [opacityRange, quickOpacity].forEach((slider) => {
-    slider.addEventListener('input', () => {
-      const value = Number(slider.value);
-      syncOpacityControls(value);
-      saveSetting({ panelOpacity: value });
-    });
+  opacityRange.addEventListener('input', () => {
+    const value = Number(opacityRange.value);
+    syncOpacityControls(value);
+    saveSetting({ panelOpacity: value });
   });
 
   saveHistoryBox.addEventListener('change', async () => {
@@ -672,7 +832,7 @@
   });
 
   $('#rerun-tutorial').addEventListener('click', () => {
-    settingsOverlay.classList.add('hidden');
+    closeOverlay(settingsOverlay);
     window.ghostTutorial.start();
   });
 })();
