@@ -8,195 +8,246 @@
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Icon sprite: 24-unit line icons, stroked with currentColor via .icon -->
+  <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+    <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></symbol>
+    <symbol id="i-transcript" viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9M4.5 4.5V9H9"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7.5 4 12l4.5 4.5M15.5 7.5 20 12l-4.5 4.5M13.5 5l-3 14"/></symbol>
+  </svg>
+
   <div id="panel" class="panel">
 
-    <!-- Drag handle / header -->
-    <header id="drag-region" class="header">
+    <!-- Title bar (drags the window) -->
+    <header id="drag-region" class="titlebar">
       <div class="brand">
         <span class="dot" id="status-dot"></span>
         <span class="brand-name">Ghost</span>
-        <span id="rec-badge" class="rec-badge hidden" title="Ghost is transcribing audio">● REC</span>
+        <span id="rec-badge" class="rec-badge hidden" title="Ghost is transcribing audio">REC</span>
       </div>
-      <div class="header-controls no-drag">
-        <input type="range" id="quick-opacity" class="quick-opacity" min="0.2" max="1" step="0.02" title="Panel opacity" aria-label="Panel opacity" />
-        <label class="smart-toggle" title="Smart mode: slower, higher-quality model (Ctrl+Shift+S)">
-          <input type="checkbox" id="smart-toggle" />
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="toggle-label">Smart</span>
+
+      <div class="titlebar-controls">
+        <div class="capture-group" role="group" aria-label="Capture">
+          <button id="btn-mic" class="icon-toggle" type="button" aria-label="Listen to mic" title="Listen to mic (Ctrl+Shift+L)"><svg class="icon"><use href="#i-mic"/></svg></button>
+          <button id="btn-meeting" class="icon-toggle" type="button" aria-label="Listen to meeting audio" title="Listen to meeting / system audio"><svg class="icon"><use href="#i-speaker"/></svg></button>
+          <button id="btn-screen" class="icon-toggle" type="button" aria-label="Attach a screenshot" title="Look at the screen once"><svg class="icon"><use href="#i-screen"/></svg></button>
+          <button id="btn-transcript" class="icon-toggle" type="button" aria-label="Show live transcript" title="Show the live transcript" hidden><svg class="icon"><use href="#i-transcript"/></svg></button>
+        </div>
+
+        <label class="smart-toggle icon-btn" title="Smart mode: slower, higher-quality model (Ctrl+Shift+S)">
+          <input type="checkbox" id="smart-toggle" aria-label="Smart mode" />
+          <svg class="icon"><use href="#i-bolt"/></svg>
         </label>
-        <button id="btn-new-chat" class="icon-btn" title="New chat — forget this conversation">＋</button>
-        <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
-        <button id="btn-minimize" class="icon-btn" title="Hide (Ctrl+Shift+G)">—</button>
-        <button id="btn-close" class="icon-btn" title="Quit Ghost">×</button>
+        <button id="btn-new-chat" class="icon-btn" type="button" aria-label="New chat" title="New chat — forget this conversation"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <button id="btn-settings" class="icon-btn" type="button" aria-label="Settings" title="Settings"><svg class="icon"><use href="#i-gear"/></svg></button>
+        <button id="btn-minimize" class="icon-btn" type="button" aria-label="Hide" title="Hide (Ctrl+Shift+G)"><svg class="icon"><use href="#i-minus"/></svg></button>
+        <button id="btn-close" class="icon-btn icon-btn--close" type="button" aria-label="Quit Ghost" title="Quit Ghost"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
     </header>
 
-    <!-- Capture status row -->
-    <div class="capture-row">
-      <button id="btn-mic" class="pill" title="Listen to mic (Ctrl+Shift+L)">🎙 Mic</button>
-      <button id="btn-meeting" class="pill" title="Listen to meeting/system audio">🔊 Meeting</button>
-      <button id="btn-screen" class="pill" title="Look at screen once">🖼 Screen</button>
-      <button id="btn-transcript" class="pill" title="Show the live transcript">📝 Transcript</button>
-      <span class="capture-hint" id="capture-hint">Off by default — nothing is captured until you turn it on.</span>
+    <!-- Action chips -->
+    <div class="chips" role="toolbar" aria-label="Actions">
+      <button class="chip action-btn" type="button" data-action="assist">Assist</button>
+      <button class="chip action-btn" type="button" data-action="what_to_say">What to say</button>
+      <button class="chip action-btn" type="button" data-action="follow_up">Follow-ups</button>
+      <button class="chip action-btn" type="button" data-action="recap">Recap</button>
+      <button class="chip chip--accent action-btn" type="button" data-action="solve_code" title="Solve the coding problem on screen"><svg class="icon icon--sm"><use href="#i-code"/></svg>Solve code</button>
     </div>
 
-    <!-- Live transcript viewer -->
-    <div id="transcript-panel" class="transcript-panel no-drag hidden">
-      <div class="transcript-head">
-        <span>Live transcript</span>
-        <button id="transcript-clear" class="btn-ghost small">Clear</button>
+    <!-- Live transcript drawer -->
+    <div id="transcript-panel" class="drawer">
+      <div class="drawer-inner no-drag">
+        <div class="transcript-head">
+          <span>Live transcript</span>
+          <button id="transcript-clear" class="link-btn" type="button">Clear</button>
+        </div>
+        <div id="transcript-text" class="transcript-text"></div>
       </div>
-      <div id="transcript-text" class="transcript-text"></div>
-    </div>
-
-    <!-- Action bar -->
-    <div class="actions">
-      <button class="action-btn" data-action="assist">Assist</button>
-      <button class="action-btn" data-action="what_to_say">What to say</button>
-      <button class="action-btn" data-action="follow_up">Follow-ups</button>
-      <button class="action-btn" data-action="recap">Recap</button>
-      <button class="action-btn wide" data-action="solve_code">⌘ Solve coding problem on screen</button>
     </div>
 
     <!-- Response stream -->
     <div id="response" class="response no-drag">
       <div class="empty-state">
-        Pick an action above, or type a question below. Ghost only sees your
-        screen or hears audio when you turn on Screen / Mic / Meeting.
+        Ask anything, or pick an action above. Ghost only sees your screen or
+        hears audio when you turn on a capture icon.
       </div>
     </div>
 
-    <!-- Attached screenshot preview -->
-    <div id="attachment-preview" class="attachment-preview hidden">
-      <div class="attachment-thumb">
+    <!-- Transient status toast -->
+    <div id="capture-hint" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- Floating input bar -->
+    <form id="ask-form" class="inputbar">
+      <div id="attachment-preview" class="attachment hidden">
         <img id="attachment-thumb-img" src="" alt="Attached screenshot" />
-        <button id="attachment-remove" class="attachment-remove" title="Remove screenshot">×</button>
+        <button id="attachment-remove" class="attachment-remove" type="button" aria-label="Remove screenshot" title="Remove screenshot"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
-      <span class="attachment-label">Screenshot attached — will be sent with your next message</span>
-    </div>
-
-    <!-- Ask anything input -->
-    <form id="ask-form" class="ask-row">
-      <input id="ask-input" type="text" placeholder="Ask anything… (Ctrl+Shift+K)" autocomplete="off" maxlength="8000" />
-      <button type="button" id="btn-stop" class="stop-btn hidden" title="Stop generating">■</button>
-      <button type="submit" id="ask-send" class="send-btn" title="Send">➤</button>
+      <input id="ask-input" type="text" placeholder="Ask anything…" aria-label="Ask anything" autocomplete="off" maxlength="8000" />
+      <button type="button" id="btn-stop" class="round-btn round-btn--stop" aria-label="Stop generating" title="Stop generating"><svg class="icon"><use href="#i-stop"/></svg></button>
+      <button type="submit" id="ask-send" class="round-btn round-btn--send" aria-label="Send" title="Send"><svg class="icon"><use href="#i-send"/></svg></button>
     </form>
   </div>
 
-  <!-- Settings overlay -->
-  <div id="settings-overlay" class="overlay hidden">
-    <div class="sheet">
+  <!-- Settings sheet -->
+  <div id="settings-overlay" class="overlay" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="sheet-header">
-        <h2>Settings</h2>
-        <button id="settings-close" class="icon-btn">×</button>
+        <h2 id="settings-title">Settings</h2>
+        <button id="settings-close" class="icon-btn" type="button" aria-label="Close settings"><svg class="icon"><use href="#i-x"/></svg></button>
+      </div>
+
+      <div class="segmented" role="tablist" aria-label="Settings sections">
+        <span class="seg-pill" aria-hidden="true"></span>
+        <button class="seg" type="button" role="tab" data-tab="ai" id="tab-ai" aria-controls="page-ai" aria-selected="true">AI</button>
+        <button class="seg" type="button" role="tab" data-tab="look" id="tab-look" aria-controls="page-look" aria-selected="false">Look</button>
+        <button class="seg" type="button" role="tab" data-tab="privacy" id="tab-privacy" aria-controls="page-privacy" aria-selected="false">Privacy</button>
+        <button class="seg" type="button" role="tab" data-tab="keys" id="tab-keys" aria-controls="page-keys" aria-selected="false">Keys</button>
       </div>
 
       <div class="sheet-body">
-        <section>
-          <h3>AI provider</h3>
-          <p class="muted">Bring your own key. Keys are encrypted and stored only on this device — never sent anywhere but the provider you pick.</p>
-          <div class="provider-row">
-            <select id="provider-select">
+        <!-- AI -->
+        <section class="tab-page active" data-tab="ai" id="page-ai" role="tabpanel" aria-labelledby="tab-ai">
+          <div class="group">
+            <div class="group-title">Provider</div>
+            <p class="muted">Bring your own key. Keys are encrypted and stored only on this device — never sent anywhere but the provider you pick.</p>
+            <select id="provider-select" class="field">
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="gemini">Google Gemini</option>
             </select>
+            <div class="row">
+              <input id="key-input" class="field" type="password" placeholder="Paste API key…" autocomplete="off" aria-label="API key" />
+              <button id="key-save" class="btn btn--primary" type="button">Save</button>
+              <button id="key-clear" class="btn" type="button">Clear</button>
+            </div>
+            <div id="key-status" class="status-line"></div>
           </div>
-          <div class="key-row">
-            <input id="key-input" type="password" placeholder="Paste API key…" autocomplete="off" />
-            <button id="key-save" class="btn-primary">Save</button>
-            <button id="key-clear" class="btn-ghost">Clear</button>
+
+          <div class="group">
+            <div class="group-title">Models</div>
+            <p class="muted">Smart mode off uses the fast model; on uses the smart one. Leave blank for Ghost's default.</p>
+            <div class="field-grid">
+              <label for="model-fast">Fast</label>
+              <input id="model-fast" class="field field--mono" type="text" autocomplete="off" spellcheck="false" />
+              <label for="model-smart">Smart</label>
+              <input id="model-smart" class="field field--mono" type="text" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="row">
+              <button id="models-save" class="btn btn--primary" type="button">Save models</button>
+              <span id="models-status" class="status-line"></span>
+            </div>
           </div>
-          <div id="key-status" class="key-status"></div>
         </section>
 
-        <section>
-          <h3>Models</h3>
-          <p class="muted">Smart mode off uses the fast model; on uses the smart one. Leave blank to use Ghost's default for this provider.</p>
-          <div class="field-grid">
-            <label for="model-fast">Fast</label>
-            <input id="model-fast" class="text-input" type="text" autocomplete="off" spellcheck="false" />
-            <label for="model-smart">Smart</label>
-            <input id="model-smart" class="text-input" type="text" autocomplete="off" spellcheck="false" />
+        <!-- Look -->
+        <section class="tab-page" data-tab="look" id="page-look" role="tabpanel" aria-labelledby="tab-look">
+          <div class="group">
+            <div class="group-title">Accent</div>
+            <div class="swatches" role="radiogroup" aria-label="Accent color">
+              <button class="swatch" type="button" role="radio" data-accent="blue" aria-label="Blue" aria-checked="true"></button>
+              <button class="swatch" type="button" role="radio" data-accent="violet" aria-label="Violet" aria-checked="false"></button>
+              <button class="swatch" type="button" role="radio" data-accent="green" aria-label="Green" aria-checked="false"></button>
+              <button class="swatch" type="button" role="radio" data-accent="orange" aria-label="Orange" aria-checked="false"></button>
+            </div>
           </div>
-          <button id="models-save" class="btn-primary small">Save models</button>
-          <span id="models-status" class="inline-status"></span>
+          <div class="group">
+            <div class="group-title">Window</div>
+            <label class="range-row">
+              <span>Opacity</span>
+              <input type="range" id="panel-opacity" min="0.2" max="1" step="0.02" />
+              <output id="panel-opacity-value" for="panel-opacity"></output>
+            </label>
+          </div>
         </section>
 
-        <section>
-          <h3>Conversation</h3>
-          <label class="checkbox-row">
-            <input type="checkbox" id="save-history" />
-            Remember chats after Ghost restarts (stored encrypted on this PC)
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" id="keep-transcript" />
-            Keep the audio transcript after Mic / Meeting is turned off (otherwise it's wiped)
-          </label>
+        <!-- Privacy -->
+        <section class="tab-page" data-tab="privacy" id="page-privacy" role="tabpanel" aria-labelledby="tab-privacy">
+          <div class="group">
+            <div class="group-title">Conversation</div>
+            <label class="check-row">
+              <input type="checkbox" id="save-history" />
+              <span>Remember chats after Ghost restarts <span class="muted">(encrypted on this PC)</span></span>
+            </label>
+            <label class="check-row">
+              <input type="checkbox" id="keep-transcript" />
+              <span>Keep the audio transcript after Mic / Meeting stops <span class="muted">(otherwise it's wiped)</span></span>
+            </label>
+          </div>
+
+          <div class="group">
+            <div class="group-title">Screen sharing</div>
+            <label class="check-row">
+              <input type="checkbox" id="hide-from-capture" />
+              <span>Try to hide Ghost from screen shares and recordings <span class="muted">(best-effort, not guaranteed)</span></span>
+            </label>
+            <details class="learn-more">
+              <summary>Learn more</summary>
+              <p class="muted">
+                Ghost can try to hide its window from screen-share and recording
+                apps on Windows using an OS-level capture-exclusion flag. <b>This
+                is best-effort only</b> — it is not guaranteed against every
+                screen-share, recording, or capture tool, and some meeting apps
+                or OS updates may defeat it entirely. Only use this for
+                legitimate purposes (private notes, personal assistance,
+                accessibility) and always follow your organization's and your
+                meeting counterparts' policies on recording and AI use.
+              </p>
+              <p class="muted">
+                <b>Recording consent:</b> Meeting capture sends other people's
+                voices to your AI provider. Many places require everyone on a
+                call to agree before it's recorded or transcribed — ask first.
+              </p>
+            </details>
+          </div>
+
+          <div class="group">
+            <div class="group-title">Meeting audio</div>
+            <details class="learn-more">
+              <summary>Learn more about Zoom and headsets</summary>
+              <p class="muted">
+                To let Ghost hear the other participants (not just you), Zoom
+                needs to actually be playing their audio through your speakers.
+                If you're on a headset, Ghost's "Meeting" capture uses Windows
+                system-audio loopback, so muting your speakers or routing audio
+                through an app-exclusive device will make meeting audio
+                invisible to Ghost. Your own mic audio is captured separately
+                and doesn't depend on this.
+              </p>
+            </details>
+          </div>
         </section>
 
-        <section>
-          <h3>Appearance</h3>
-          <label class="range-row">
-            Panel opacity
-            <input type="range" id="panel-opacity" min="0.2" max="1" step="0.02" />
-            <output id="panel-opacity-value" for="panel-opacity"></output>
-          </label>
+        <!-- Keys -->
+        <section class="tab-page" data-tab="keys" id="page-keys" role="tabpanel" aria-labelledby="tab-keys">
+          <div class="group">
+            <div class="group-title">Shortcuts</div>
+            <p class="muted">Use names like <kbd>CommandOrControl+Shift+G</kbd> or <kbd>Alt+F1</kbd>. Leave blank to turn a shortcut off.</p>
+            <div id="shortcut-list" class="shortcut-editor"></div>
+            <div class="row">
+              <button id="shortcuts-save" class="btn btn--primary" type="button">Save shortcuts</button>
+              <button id="shortcuts-reset" class="btn" type="button">Reset to defaults</button>
+              <span id="shortcuts-status" class="status-line"></span>
+            </div>
+          </div>
+          <button id="rerun-tutorial" class="btn btn--block" type="button">Replay first-run tutorial</button>
         </section>
-
-        <section>
-          <h3>Privacy note</h3>
-          <p class="muted">
-            Ghost can try to hide its window from screen-share and recording
-            apps on Windows using an OS-level capture-exclusion flag. <b>This
-            is best-effort only</b> — it is not guaranteed against every
-            screen-share, recording, or capture tool, and some meeting apps
-            or OS updates may defeat it entirely. Only use this for
-            legitimate purposes (private notes, personal assistance,
-            accessibility) and always follow your organization's and your
-            meeting counterparts' policies on recording and AI use.
-          </p>
-          <p class="muted">
-            <b>Recording consent:</b> Meeting capture sends other people's
-            voices to your AI provider. Many places require everyone on a
-            call to agree before it's recorded or transcribed — ask first.
-          </p>
-          <label class="checkbox-row">
-            <input type="checkbox" id="hide-from-capture" />
-            Attempt to hide Ghost from screen shares/recordings (best-effort, not guaranteed)
-          </label>
-        </section>
-
-        <section>
-          <h3>Zoom note</h3>
-          <p class="muted">
-            To let Ghost hear the other participants (not just you), Zoom
-            needs to actually be playing their audio through your speakers.
-            If you're on a headset, Ghost's "Meeting" capture uses Windows
-            system-audio loopback, so muting your speakers or routing audio
-            through an app-exclusive device will make meeting audio
-            invisible to Ghost. Your own mic audio is captured separately
-            and doesn't depend on this.
-          </p>
-        </section>
-
-        <section>
-          <h3>Shortcuts</h3>
-          <p class="muted">Use names like <kbd>CommandOrControl+Shift+G</kbd> or <kbd>Alt+F1</kbd>. Leave blank to turn a shortcut off.</p>
-          <div id="shortcut-list" class="shortcut-editor"></div>
-          <button id="shortcuts-save" class="btn-primary small">Save shortcuts</button>
-          <button id="shortcuts-reset" class="btn-ghost small">Reset to defaults</button>
-          <span id="shortcuts-status" class="inline-status"></span>
-        </section>
-
-        <button id="rerun-tutorial" class="btn-ghost full-width">Replay first-run tutorial</button>
       </div>
     </div>
   </div>
 
-  <!-- First-run tutorial overlay -->
-  <div id="tutorial-overlay" class="overlay hidden">
-    <div class="sheet tutorial-sheet" id="tutorial-sheet"></div>
+  <!-- First-run tutorial -->
+  <div id="tutorial-overlay" class="overlay" hidden>
+    <div class="sheet tutorial-sheet" id="tutorial-sheet" role="dialog" aria-modal="true"></div>
   </div>
 
   <!-- Hidden capture helpers -->
