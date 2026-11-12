@@ -100,6 +100,14 @@ describe('validateSettingsPatch', () => {
     expect(v.ACCENT_IDS).toEqual(['blue', 'violet', 'green', 'orange']);
   });
 
+  it('validates theme', () => {
+    for (const t of ['system', 'light', 'dark'])
+      expect(v.validateSettingsPatch({ theme: t })).toEqual({ theme: t });
+    expect(() => v.validateSettingsPatch({ theme: 'sepia' })).toThrow(/theme/);
+    expect(() => v.validateSettingsPatch({ theme: true })).toThrow(/theme/);
+    expect(v.THEME_IDS).toEqual(['system', 'light', 'dark']);
+  });
+
   it('does not allow prototype pollution through __proto__', () => {
     const patch = JSON.parse('{"__proto__": {"polluted": true}}');
     expect(() => v.validateSettingsPatch(patch)).toThrow(/Unknown setting/);

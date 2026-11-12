@@ -60,13 +60,35 @@
 
   // ---------- accent ----------
   const ACCENTS = { blue: '#5b8cff', violet: '#9b7bff', green: '#34c77b', orange: '#ff9f43' };
+  // Companion hue for the ambient glow behind the glass, one per accent.
+  const ACCENT_GLOWS = { blue: '#b26bff', violet: '#ff6fb5', green: '#2fb8d6', orange: '#ff5f8a' };
   function applyAccent(id) {
     const key = Object.hasOwn(ACCENTS, id) ? id : 'blue';
-    document.documentElement.style.setProperty('--accent', ACCENTS[key] || ACCENTS.blue);
+    const root = document.documentElement.style;
+    root.setProperty('--accent', ACCENTS[key] || ACCENTS.blue);
+    root.setProperty('--accent-2', ACCENT_GLOWS[key] || ACCENT_GLOWS.blue);
     document.querySelectorAll('.swatch').forEach((s) => {
       s.setAttribute('aria-checked', String(s.dataset.accent === key));
     });
   }
+
+  // ---------- theme ----------
+  // 'system' follows Windows' app mode live; 'light' / 'dark' pin it.
+  const THEMES = ['system', 'light', 'dark'];
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  let themeChoice = 'system';
+  function applyTheme(choice) {
+    themeChoice = THEMES.includes(choice) ? choice : 'system';
+    const resolved = themeChoice === 'system' ? (systemDark.matches ? 'dark' : 'light') : themeChoice;
+    document.documentElement.dataset.theme = resolved;
+    document.querySelectorAll('.theme-option').forEach((b) => {
+      b.setAttribute('aria-checked', String(b.dataset.themeChoice === themeChoice));
+    });
+  }
+  systemDark.addEventListener('change', () => {
+    if (themeChoice === 'system') applyTheme('system');
+  });
+  applyTheme('system'); // paint the right theme before settings arrive
 
   // ---------- overlays (sheet enter/exit along the same path) ----------
   function openOverlay(el) {
@@ -112,6 +134,7 @@
   async function boot() {
     settings = await window.ghost.getSettings();
     smartToggle.checked = !!settings.smartMode;
+    applyTheme(settings.theme);
     applyAccent(settings.accent);
     syncOpacityControls(settings.panelOpacity);
     if (settings.saveHistory) {
@@ -317,15 +340,15 @@
     setBusy(true);
     setStatus('busy');
     showToast('Transcribing what you said…');
-    let spoken = '';
-    let error = null;
+    let speech;
     try {
-      ({ text: spoken, error } = await window.ghostCapture.takeMicSpeech());
+      speech = await window.ghostCapture.takeMicSpeech();
     } finally {
       takingSpeech = false;
       setBusy(false);
       setStatus('active');
     }
+    const { text: spoken = '', error = null } = speech || {};
     const q = [typed, spoken].filter(Boolean).join(' ');
     if (!q) {
       showToast(
@@ -723,6 +746,14 @@
     }),
   );
 
+  // ---------- theme picker ----------
+  document.querySelectorAll('.theme-option').forEach((b) =>
+    b.addEventListener('click', () => {
+      applyTheme(b.dataset.themeChoice);
+      saveSetting({ theme: themeChoice });
+    }),
+  );
+
   function setStatusText(el, text, ok) {
     el.textContent = text;
     el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
@@ -732,6 +763,7 @@
     settings = await window.ghost.getSettings();
     selectTab(lastTab);
     openOverlay(settingsOverlay);
+    applyTheme(settings.theme);
     applyAccent(settings.accent);
     providerSelect.value = settings.provider;
     hideFromCapture.checked = !!settings.hideFromCapture;

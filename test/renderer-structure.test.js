@@ -84,6 +84,18 @@ describe('index.html', () => {
       'orange',
     ]));
 
+  it('has the three theme options in order', () =>
+    expect([...html.matchAll(/data-theme-choice="(\w+)"/g)].map((m) => m[1])).toEqual([
+      'system',
+      'light',
+      'dark',
+    ]));
+
+  it('has the ambient glass backdrop inside the panel', () =>
+    expect(html).toMatch(
+      /<div id="panel" class="panel">\s*(<!--[^>]*-->\s*)?<div class="ambient" aria-hidden="true">/,
+    ));
+
   it('has the five action chips in order', () =>
     expect([...html.matchAll(/data-action="(\w+)"/g)].map((m) => m[1])).toEqual([
       'assist',
@@ -174,6 +186,12 @@ describe('renderer.js', () => {
 
   it('no longer references the header opacity slider', () =>
     expect(js).not.toMatch(/quick-opacity|quickOpacity/));
+
+  it('applies the saved theme and follows Windows when set to system', () => {
+    expect(js).toMatch(/applyTheme\(settings\.theme\)/);
+    expect(js).toMatch(/matchMedia\('\(prefers-color-scheme: dark\)'\)/);
+    expect(js).toMatch(/saveSetting\(\{ theme: themeChoice \}\)/);
+  });
 
   it('falls back to blue for unknown accents', () =>
     expect(js).toMatch(/ACCENTS\[[^\]]+\]\s*\|\|\s*ACCENTS\.blue/));

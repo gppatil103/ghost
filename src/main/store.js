@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS = {
   keepTranscriptAfterStop: false, // false = wipe the rolling transcript when capture stops
   panelOpacity: 1, // whole-window opacity (0.2–1), set from Settings → Look
   accent: 'blue', // UI accent color: 'blue' | 'violet' | 'green' | 'orange'
+  theme: 'system', // 'system' follows Windows light/dark; or force 'light' | 'dark'
   windowPosition: null, // { x, y } where the user last dragged the panel
   models: {}, // per-provider { fast?, smart? } model id overrides
   shortcuts: {}, // per-command accelerator overrides; '' disables
