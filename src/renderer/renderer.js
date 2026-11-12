@@ -201,16 +201,28 @@
       return;
     }
     try {
+      lastTranscribeErrorShown = '';
       await window.ghostCapture.startMic(() => setStatus('active'));
       btnMic.classList.add('on');
-      showToast('Listening to your mic — click again to stop.');
+      showToast('Listening — speak, then press Enter to ask. Click the mic again to stop.');
       setStatus('active');
+      askInput.focus(); // so Enter submits instead of re-pressing the mic button
     } catch {
       showToast('⚠ Mic permission was denied.');
     }
     updateRecBadge();
   });
   window.ghost.onToggleMic(() => btnMic.click());
+
+  // Transcription failures (bad key, quota, …) used to be silent: the REC
+  // badge stayed on but nothing was heard. Tell the user, once per message.
+  let lastTranscribeErrorShown = '';
+  window.ghostCapture.onTranscribeError((err) => {
+    const msg = ipcErrorMessage(err);
+    if (msg === lastTranscribeErrorShown) return;
+    lastTranscribeErrorShown = msg;
+    showToast(`⚠ Couldn't transcribe audio: ${msg}`);
+  });
 
   btnMeeting.addEventListener('click', async () => {
     if (window.ghostCapture.isMeetingOn()) {
@@ -286,10 +298,43 @@
     btn.addEventListener('click', () => runAction(btn.dataset.action));
   });
 
-  askForm.addEventListener('submit', (e) => {
+  // With the mic on, Enter sends what you said (plus anything typed) as the
+  // question. The mic keeps listening afterwards for the next one.
+  let takingSpeech = false;
+  askForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const q = askInput.value.trim();
-    if (!q || activeRequestId) return;
+    if (activeRequestId || takingSpeech) return;
+    const typed = askInput.value.trim();
+
+    if (!window.ghostCapture.isMicOn()) {
+      if (!typed) return;
+      askInput.value = '';
+      runAction('ask_anything', typed);
+      return;
+    }
+
+    takingSpeech = true;
+    setBusy(true);
+    setStatus('busy');
+    showToast('Transcribing what you said…');
+    let spoken = '';
+    let error = null;
+    try {
+      ({ text: spoken, error } = await window.ghostCapture.takeMicSpeech());
+    } finally {
+      takingSpeech = false;
+      setBusy(false);
+      setStatus('active');
+    }
+    const q = [typed, spoken].filter(Boolean).join(' ');
+    if (!q) {
+      showToast(
+        error
+          ? `⚠ Couldn't transcribe your voice: ${ipcErrorMessage(error)}`
+          : "Didn't catch anything — speak, then press Enter.",
+      );
+      return;
+    }
     askInput.value = '';
     runAction('ask_anything', q);
   });

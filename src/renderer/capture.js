@@ -38,7 +38,11 @@
 
   function notifyTranscript() {
     for (const cb of transcriptListeners) {
-      try { cb(); } catch (err) { console.warn('transcript listener failed', err); }
+      try {
+        cb();
+      } catch (err) {
+        console.warn('transcript listener failed', err);
+      }
     }
   }
 
@@ -56,7 +60,8 @@
   function getCombinedTranscript() {
     const lines = [];
     if (rollingTranscript.mic.length) lines.push(`[You] ${rollingTranscript.mic.join(' ')}`);
-    if (rollingTranscript.meeting.length) lines.push(`[Meeting audio] ${rollingTranscript.meeting.join(' ')}`);
+    if (rollingTranscript.meeting.length)
+      lines.push(`[Meeting audio] ${rollingTranscript.meeting.join(' ')}`);
     return lines.join('\n\n');
   }
 
@@ -98,10 +103,20 @@
   // ---- Transcription queue ----
   const clipQueue = [];
   let transcribing = false;
+  // Most recent failure (cleared by the next success), so a caller that got
+  // no text back can tell "you said nothing" apart from "transcription broke".
+  let lastTranscribeError = null;
+  const errorListeners = new Set();
 
   function enqueueClip(job) {
     clipQueue.push(job);
-    while (clipQueue.length > MAX_QUEUED_CLIPS) clipQueue.shift(); // drop oldest
+    // Drop the oldest clips, but never one somebody is waiting on (a flush).
+    while (clipQueue.length > MAX_QUEUED_CLIPS) {
+      const i = clipQueue.findIndex((j) => !j.mustKeep);
+      if (i === -1) break;
+      const [dropped] = clipQueue.splice(i, 1);
+      if (dropped.done) dropped.done();
+    }
     drainQueue();
   }
 
@@ -113,13 +128,23 @@
     try {
       const b64 = arrayBufferToBase64(await job.blob.arrayBuffer());
       const text = await window.ghost.transcribeClip(b64, 'audio/webm');
+      lastTranscribeError = null;
       if (job.generation !== generation[job.sourceKey]) return; // cleared meanwhile
       pushTranscript(job.sourceKey, text);
       if (job.onTranscribed) job.onTranscribed(text);
     } catch (err) {
       console.warn('transcription failed', err);
+      lastTranscribeError = err;
+      for (const cb of errorListeners) {
+        try {
+          cb(err);
+        } catch (e) {
+          console.warn('transcribe-error listener failed', e);
+        }
+      }
     } finally {
       transcribing = false;
+      if (job.done) job.done();
       drainQueue();
     }
   }
@@ -140,8 +165,15 @@
       peak = Math.max(peak, Math.sqrt(sum / buf.length));
     }, 100);
     return {
-      takePeak() { const p = peak; peak = 0; return p; },
-      close() { clearInterval(timer); ctx.close().catch(() => {}); },
+      takePeak() {
+        const p = peak;
+        peak = 0;
+        return p;
+      },
+      close() {
+        clearInterval(timer);
+        ctx.close().catch(() => {});
+      },
     };
   }
 
@@ -150,23 +182,57 @@
   function startRollingRecorder(stream, sourceKey, onTranscribed) {
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
     const meter = createLevelMeter(stream);
-    const clipPeaks = []; // one entry per stop(), matched to dataavailable in order
+    // One entry per stop(), matched to dataavailable in order. `done` (only
+    // set by flush) resolves once that clip has been transcribed or skipped.
+    const cuts = [];
 
     recorder.ondataavailable = (e) => {
-      const peak = clipPeaks.shift() ?? 1;
-      if (!e.data || e.data.size < MIN_CLIP_BYTES) return; // empty
-      if (peak < SILENCE_RMS) return;                       // silent
-      enqueueClip({ blob: e.data, sourceKey, onTranscribed, generation: generation[sourceKey] });
+      const { peak, done } = cuts.shift() ?? { peak: 1 };
+      if (!e.data || e.data.size < MIN_CLIP_BYTES || peak < SILENCE_RMS) {
+        // empty or silent
+        if (done) done();
+        return;
+      }
+      enqueueClip({
+        blob: e.data,
+        sourceKey,
+        onTranscribed,
+        generation: generation[sourceKey],
+        done,
+        mustKeep: !!done,
+      });
     };
 
-    const cut = () => { clipPeaks.push(meter.takePeak()); recorder.stop(); };
+    const cut = (done) => {
+      cuts.push({ peak: meter.takePeak(), done });
+      recorder.stop();
+    };
+
+    let interval = null;
+    const startClipTimer = () => {
+      clearInterval(interval);
+      interval = setInterval(() => {
+        if (recorder.state === 'recording') {
+          cut();
+          recorder.start();
+        }
+      }, CLIP_MS);
+    };
 
     recorder.start();
-    const interval = setInterval(() => {
-      if (recorder.state === 'recording') { cut(); recorder.start(); }
-    }, CLIP_MS);
+    startClipTimer();
 
     return {
+      // Cut the clip in progress right now and resolve once it (and every
+      // clip queued before it) has been transcribed. Recording carries on.
+      flush() {
+        if (recorder.state !== 'recording') return Promise.resolve();
+        return new Promise((resolve) => {
+          cut(resolve);
+          recorder.start();
+          startClipTimer(); // next clip gets a full CLIP_MS
+        });
+      },
       stop() {
         clearInterval(interval);
         if (recorder.state === 'recording') cut();
@@ -192,31 +258,69 @@
   }
 
   function stopMic() {
-    if (micRecorder) { micRecorder.stop(); micRecorder = null; }
-    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    if (micRecorder) {
+      micRecorder.stop();
+      micRecorder = null;
+    }
+    if (micStream) {
+      micStream.getTracks().forEach((t) => t.stop());
+      micStream = null;
+    }
+  }
+
+  // Transcribe whatever the mic has heard so far (including the partial clip
+  // still recording), then hand back that speech and clear it, so it's sent
+  // once as the user's question rather than repeated on every later turn.
+  // Resolves to { text, error } — error is the latest transcription failure,
+  // if any, so the UI can explain an empty result.
+  async function takeMicSpeech() {
+    if (micRecorder) await micRecorder.flush();
+    const text = rollingTranscript.mic.join(' ').trim();
+    clearTranscript('mic');
+    return { text, error: text ? null : lastTranscribeError };
   }
 
   async function startMeeting(onTranscribed) {
     if (meetingStream) return;
     await window.ghost.armCapture('meeting');
     const raw = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    raw.getVideoTracks().forEach((t) => { t.stop(); raw.removeTrack(t); });
+    raw.getVideoTracks().forEach((t) => {
+      t.stop();
+      raw.removeTrack(t);
+    });
     if (!raw.getAudioTracks().length) throw new Error('No system audio track was granted');
     meetingStream = raw;
     meetingRecorder = startRollingRecorder(meetingStream, 'meeting', onTranscribed);
   }
 
   function stopMeeting() {
-    if (meetingRecorder) { meetingRecorder.stop(); meetingRecorder = null; }
-    if (meetingStream) { meetingStream.getTracks().forEach((t) => t.stop()); meetingStream = null; }
+    if (meetingRecorder) {
+      meetingRecorder.stop();
+      meetingRecorder = null;
+    }
+    if (meetingStream) {
+      meetingStream.getTracks().forEach((t) => t.stop());
+      meetingStream = null;
+    }
   }
 
   window.ghostCapture = {
     captureScreenshot,
-    startMic, stopMic,
-    startMeeting, stopMeeting,
-    getCombinedTranscript, clearTranscript,
-    onTranscriptChange: (cb) => { transcriptListeners.add(cb); return () => transcriptListeners.delete(cb); },
+    startMic,
+    stopMic,
+    takeMicSpeech,
+    startMeeting,
+    stopMeeting,
+    getCombinedTranscript,
+    clearTranscript,
+    onTranscriptChange: (cb) => {
+      transcriptListeners.add(cb);
+      return () => transcriptListeners.delete(cb);
+    },
+    onTranscribeError: (cb) => {
+      errorListeners.add(cb);
+      return () => errorListeners.delete(cb);
+    },
     isMicOn: () => !!micStream,
     isMeetingOn: () => !!meetingStream,
   };

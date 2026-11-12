@@ -408,12 +408,12 @@ function registerIpc() {
     const { audioBase64, mimeType } = validateClip(args);
     if (!clipLimiter.tryAcquire()) throw new Error('Too many transcription requests — skipping this clip.');
     const keys = {};
-    for (const p of ['openai', 'gemini'])
-      if (store.hasApiKey(p)) {
-        keys[p] = store.getApiKey(p);
-        break;
-      }
-    return transcribeClip({ audioBuffer: Buffer.from(audioBase64, 'base64'), mimeType }, keys);
+    for (const p of ['openai', 'gemini']) if (store.hasApiKey(p)) keys[p] = store.getApiKey(p);
+    return transcribeClip(
+      { audioBuffer: Buffer.from(audioBase64, 'base64'), mimeType },
+      keys,
+      store.getSettings().provider,
+    );
   });
 
   // Streaming LLM action. The renderer sends the action id + any captured

@@ -83,9 +83,11 @@ function buildUserText(payload) {
     parts.push(`<user_message>\n${neutralizeTags(payload.userQuestion)}\n</user_message>`);
   }
   if (!payload.transcript && !payload.userQuestion) {
-    parts.push(payload.imageBase64
-      ? '(No transcript or typed question — rely on the screenshot.)'
-      : '(No transcript, screenshot, or typed question — use the earlier conversation if any, otherwise ask what the user needs.)');
+    parts.push(
+      payload.imageBase64
+        ? '(No transcript or typed question — rely on the screenshot.)'
+        : '(No transcript, screenshot, or typed question — use the earlier conversation if any, otherwise ask what the user needs.)',
+    );
   }
   return parts.join('\n\n');
 }
@@ -108,7 +110,9 @@ function normalizeHistory(history = []) {
 
 function pickModel(providerName, smart, overrides = {}) {
   const tier = smart ? 'smart' : 'fast';
-  return (overrides[providerName] && overrides[providerName][tier]) || PROVIDERS[providerName].DEFAULT_MODELS[tier];
+  return (
+    (overrides[providerName] && overrides[providerName][tier]) || PROVIDERS[providerName].DEFAULT_MODELS[tier]
+  );
 }
 
 // payload has already been through validateRunPayload().
@@ -120,36 +124,65 @@ async function runAction(payload, { settings, providerName, apiKey, signal }, { 
   const smart = !!settings.smartMode;
   const model = pickModel(providerName, smart, settings.models);
 
-  const { fullText, usage } = await provider.streamChat({
-    apiKey,
-    model,
-    smart,
-    systemPrompt: buildSystemPrompt(payload.action),
-    history: normalizeHistory(payload.history),
-    userText: buildUserText(payload),
-    image: payload.imageBase64 ? { base64: payload.imageBase64, mimeType: payload.imageMimeType } : undefined,
-    signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
-  }, onChunk);
+  const { fullText, usage } = await provider.streamChat(
+    {
+      apiKey,
+      model,
+      smart,
+      systemPrompt: buildSystemPrompt(payload.action),
+      history: normalizeHistory(payload.history),
+      userText: buildUserText(payload),
+      image: payload.imageBase64
+        ? { base64: payload.imageBase64, mimeType: payload.imageMimeType }
+        : undefined,
+      signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+    },
+    onChunk,
+  );
 
   if (!fullText || !fullText.trim()) {
-    throw new ProviderError('The model returned an empty response — it may have been blocked by a safety filter. Try rephrasing.', { retryable: true });
+    throw new ProviderError(
+      'The model returned an empty response — it may have been blocked by a safety filter. Try rephrasing.',
+      { retryable: true },
+    );
   }
 
   onDone({ provider: providerName, model, fullText, usage: usage || {} });
 }
 
-// Picks who transcribes audio: prefer OpenAI's dedicated transcription
-// endpoint, fall back to Gemini's audio understanding, else give up
-// gracefully (Anthropic has no audio input as of this writing).
-async function transcribeClip({ audioBuffer, mimeType }, keys) {
-  const signal = AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS);
-  if (keys.openai) {
-    return openai.transcribeAudio({ apiKey: keys.openai, audioBuffer, mimeType, signal });
-  }
-  if (keys.gemini) {
-    return gemini.transcribeAudio({ apiKey: keys.gemini, audioBuffer, mimeType, signal });
-  }
-  throw new Error('Mic/meeting-audio transcription needs an OpenAI or Gemini key.');
+const TRANSCRIBERS = { openai, gemini }; // Anthropic has no audio input as of this writing
+
+// Order in which to try transcription providers: the user's selected chat
+// provider first (its key is the one they actually keep working), then the
+// other audio-capable one.
+function transcriberOrder(preferred) {
+  const all = Object.keys(TRANSCRIBERS);
+  return TRANSCRIBERS[preferred] ? [preferred, ...all.filter((p) => p !== preferred)] : all;
 }
 
-module.exports = { ACTIONS, runAction, transcribeClip, buildSystemPrompt, buildUserText, normalizeHistory, pickModel };
+// Transcribe with the first provider that has a key; if it fails (bad key,
+// quota, outage) fall back to the next one, and only throw if all fail.
+async function transcribeClip({ audioBuffer, mimeType }, keys, preferred) {
+  let lastErr = null;
+  for (const name of transcriberOrder(preferred)) {
+    if (!keys[name]) continue;
+    try {
+      const signal = AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS);
+      return await TRANSCRIBERS[name].transcribeAudio({ apiKey: keys[name], audioBuffer, mimeType, signal });
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('Mic/meeting-audio transcription needs an OpenAI or Gemini key.');
+}
+
+module.exports = {
+  ACTIONS,
+  runAction,
+  transcribeClip,
+  transcriberOrder,
+  buildSystemPrompt,
+  buildUserText,
+  normalizeHistory,
+  pickModel,
+};
