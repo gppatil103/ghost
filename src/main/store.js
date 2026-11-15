@@ -22,6 +22,7 @@ const DEFAULT_SHORTCUTS = {
   toggle_smart: 'CommandOrControl+Shift+S',
   toggle_clickthrough: 'CommandOrControl+Shift+X',
   toggle_mic: 'CommandOrControl+Shift+L',
+  quick_ask: 'CommandOrControl+Shift+Space',
 };
 
 const DEFAULT_SETTINGS = {
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS = {
   windowPosition: null, // { x, y } where the user last dragged the panel
   models: {}, // per-provider { fast?, smart? } model id overrides
   shortcuts: {}, // per-command accelerator overrides; '' disables
+  customActions: [], // user-defined "/" actions: [{ id, name, prompt }]
 };
 
 function readJson(file, fallback) {

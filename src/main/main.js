@@ -19,12 +19,14 @@ const {
   Tray,
   Menu,
   nativeImage,
+  clipboard,
 } = require('electron');
 const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
 const store = require('./store');
+const { grabDisplay, encodeImage } = require('./screenshot');
 const { isPositionVisible } = require('./window-position');
 const { runAction, transcribeClip, ACTIONS } = require('./actions');
 const {
@@ -37,6 +39,8 @@ const {
   validateProvider,
   validateResize,
   validateHistoryForSave,
+  validateRegionResult,
+  LIMITS,
 } = require('./validate');
 const { INVOKE, EVENTS } = require('../shared/ipc-channels');
 
@@ -50,10 +54,22 @@ console.log(
 
 const INDEX_PATH = path.join(__dirname, '..', 'renderer', 'index.html');
 const INDEX_URL = pathToFileURL(INDEX_PATH).href;
+// Region-capture selector: a second page from the same bundle, shown
+// full-screen over the display while the user drags a rectangle.
+const REGION_PATH = path.join(__dirname, '..', 'renderer', 'region.html');
+const REGION_URL = pathToFileURL(REGION_PATH).href;
+
+const PANEL_MIN_WIDTH = 320;
+const PANEL_MIN_HEIGHT = 400;
+const COMPACT_HEIGHT = 64; // the one-line "quick ask" bar
 
 let mainWindow = null;
 let tray = null;
 let clickThrough = false;
+let restoreBounds = null; // bounds to go back to while the panel is maximized
+let compactBounds = null; // bounds to go back to while the panel is the compact quick-ask bar
+let regionWindow = null; // the full-screen selector while a region capture is in progress
+let regionJob = null; // { resolve, image, scale, panelWasVisible, timer }
 
 const isDev = !app.isPackaged;
 
@@ -72,7 +88,12 @@ function isAppUrl(url) {
     const u = new URL(url);
     u.hash = '';
     u.search = '';
-    return u.href === INDEX_URL;
+    // Windows paths are case-insensitive, and Chromium canonicalises the
+    // drive letter to upper case while __dirname keeps whatever case the
+    // launcher used (a `d:\...` cwd gave file:///d:/ vs file:///D:/). Compare
+    // case-insensitively so such a launch isn't locked out of its own IPC.
+    const href = u.href.toLowerCase();
+    return href === INDEX_URL.toLowerCase() || href === REGION_URL.toLowerCase();
   } catch {
     return false;
   }
@@ -95,8 +116,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     ...size,
     ...position,
-    minWidth: 320,
-    minHeight: 400,
+    minWidth: PANEL_MIN_WIDTH,
+    minHeight: PANEL_MIN_HEIGHT,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -137,6 +158,7 @@ function createWindow() {
   if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   mainWindow.on('moved', () => {
+    if (restoreBounds) return; // maximized: keep the spot the panel will restore to
     const [x, y] = mainWindow.getPosition();
     try {
       store.setSettings({ windowPosition: { x, y } });
@@ -209,6 +231,7 @@ const SHORTCUT_HANDLERS = {
   toggle_smart: () => sendEvent(EVENTS.TOGGLE_SMART),
   toggle_clickthrough: toggleClickThrough,
   toggle_mic: () => showAndSend(EVENTS.TOGGLE_MIC),
+  quick_ask: () => showAndSend(EVENTS.QUICK_ASK),
 };
 
 let shortcutStatus = {};
@@ -265,12 +288,89 @@ function createTray() {
 
 // ---- Session hardening ----
 
-// Screen / system-audio capture is granted only to our own page, and only
-// within a few seconds of the renderer arming it in response to the user
-// clicking Screen / Meeting (or running "Solve coding problem"). Each arm
-// is single-use. Loopback audio is only handed out for Meeting.
+// Screen capture is granted only to our own page, and only within a few
+// seconds of the renderer arming it in response to the user clicking Screen
+// (or running "Solve coding problem"). Each arm is single-use, and audio is
+// never granted: Ghost does not capture system audio.
 const CAPTURE_ARM_MS = 5000;
-let armedCapture = null; // { kind: 'screen' | 'meeting', expires }
+let armedCapture = null; // { kind: 'screen', expires }
+
+// ---- Region capture ----
+// Hide the panel, freeze the display into an image, show region.html over
+// the display, and resolve with the crop the user picks (null if cancelled).
+function finishRegion(result) {
+  const job = regionJob;
+  if (!job) return;
+  regionJob = null;
+  clearTimeout(job.timer);
+  if (regionWindow) {
+    regionWindow.destroy();
+    regionWindow = null;
+  }
+  if (job.panelWasVisible && mainWindow) mainWindow.show();
+  job.resolve(result);
+}
+
+async function captureRegion() {
+  if (regionJob) throw new Error('A screen capture is already in progress');
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const panelWasVisible = !!mainWindow && mainWindow.isVisible();
+  if (panelWasVisible) mainWindow.hide();
+  await new Promise((r) => setTimeout(r, 180)); // let the compositor drop the panel first
+  let image;
+  try {
+    image = await grabDisplay(display);
+  } catch (err) {
+    if (panelWasVisible && mainWindow) mainWindow.show();
+    throw err;
+  }
+  const scale = display.scaleFactor || 1;
+
+  return new Promise((resolve) => {
+    regionJob = {
+      resolve,
+      image,
+      scale,
+      panelWasVisible,
+      timer: setTimeout(() => finishRegion(null), 60_000),
+    };
+    regionWindow = new BrowserWindow({
+      ...display.bounds,
+      frame: false,
+      hasShadow: false,
+      resizable: false,
+      movable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      show: false,
+      fullscreenable: false,
+      enableLargerThanScreen: true,
+      backgroundColor: '#000000',
+      webPreferences: {
+        preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        webSecurity: true,
+        spellcheck: false,
+      },
+    });
+    regionWindow.setAlwaysOnTop(true, 'screen-saver');
+    regionWindow.loadFile(REGION_PATH);
+    regionWindow.once('ready-to-show', () => {
+      if (!regionWindow) return;
+      regionWindow.show();
+      regionWindow.focus();
+      // Full-resolution preview so the selector looks like the real screen.
+      const preview = encodeImage(image, null, 1, Infinity);
+      regionWindow.webContents.send(EVENTS.REGION_IMAGE, `data:${preview.mimeType};base64,${preview.base64}`);
+    });
+    regionWindow.on('closed', () => {
+      regionWindow = null;
+      if (regionJob) finishRegion(null);
+    });
+  });
+}
 
 function installDisplayMediaHandler(ses) {
   ses.setDisplayMediaRequestHandler(
@@ -290,9 +390,7 @@ function installDisplayMediaHandler(ses) {
             callback({});
             return;
           }
-          const grant = { video: sources[0] };
-          if (armed.kind === 'meeting' && request.audioRequested) grant.audio = 'loopback';
-          callback(grant);
+          callback({ video: sources[0] });
         })
         .catch(() => callback({}));
     },
@@ -384,13 +482,87 @@ function registerIpc() {
     mainWindow.setSize(width || w, height || h);
   });
 
+  // The window is created non-maximizable (OS maximize would fight the
+  // toolbar/always-on-top setup), so "full screen" is done by hand: fill the
+  // work area of the display the panel is on, and restore the old bounds on
+  // the next toggle. Resolves to whether the panel is now maximized.
+  handle(INVOKE.TOGGLE_MAXIMIZE, () => {
+    if (!mainWindow) return false;
+    if (restoreBounds) {
+      mainWindow.setBounds(restoreBounds);
+      restoreBounds = null;
+      return false;
+    }
+    restoreBounds = mainWindow.getBounds();
+    mainWindow.setBounds(screen.getDisplayMatching(restoreBounds).workArea);
+    return true;
+  });
+
   handle(INVOKE.HIDE_PANEL, () => mainWindow && mainWindow.hide());
   handle(INVOKE.QUIT_APP, () => app.quit());
 
   handle(INVOKE.ARM_CAPTURE, (_e, kind) => {
-    if (kind !== 'screen' && kind !== 'meeting') throw new Error('Invalid capture kind');
+    if (kind !== 'screen') throw new Error('Invalid capture kind');
     armedCapture = { kind, expires: Date.now() + CAPTURE_ARM_MS };
     return true;
+  });
+
+  handle(INVOKE.CAPTURE_REGION, () => captureRegion());
+
+  // Sent by region.html. Crop happens here, from the frozen full-res image.
+  handle(INVOKE.REGION_RESULT, (_e, raw) => {
+    const result = validateRegionResult(raw);
+    if (!regionJob) return false;
+    if (result.cancelled) {
+      finishRegion(null);
+      return true;
+    }
+    const { image, scale } = regionJob;
+    let shot;
+    try {
+      shot = encodeImage(image, result.rect, scale);
+    } catch (err) {
+      finishRegion(null);
+      throw err;
+    }
+    finishRegion(shot);
+    return true;
+  });
+
+  // An image on the clipboard wins over text; both are capped like any
+  // other screenshot / question.
+  handle(INVOKE.READ_CLIPBOARD, async () => {
+    // Electron's clipboard API is the async, web-style one: items with MIME types.
+    const items = await clipboard.read();
+    for (const item of items) {
+      const type = item.types.find((t) => /^image\/(png|jpeg|bmp|gif|webp)$/.test(t));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const img = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
+      if (!img.isEmpty()) return { image: encodeImage(img, null, 1) };
+    }
+    const text = await clipboard.readText();
+    return { text: (text || '').slice(0, LIMITS.userQuestionChars) };
+  });
+
+  // Compact "quick ask": shrink to a one-line bar at the same spot, and go
+  // back to the previous size when the renderer leaves compact mode.
+  handle(INVOKE.SET_COMPACT, (_e, on) => {
+    if (!mainWindow) return false;
+    if (on && !compactBounds) {
+      if (restoreBounds) {
+        mainWindow.setBounds(restoreBounds);
+        restoreBounds = null;
+      }
+      compactBounds = mainWindow.getBounds();
+      mainWindow.setMinimumSize(PANEL_MIN_WIDTH, COMPACT_HEIGHT);
+      mainWindow.setSize(compactBounds.width, COMPACT_HEIGHT);
+    } else if (!on && compactBounds) {
+      mainWindow.setMinimumSize(PANEL_MIN_WIDTH, PANEL_MIN_HEIGHT);
+      mainWindow.setBounds(compactBounds);
+      compactBounds = null;
+    }
+    return !!compactBounds;
   });
 
   handle(INVOKE.GET_SHORTCUT_STATUS, () => shortcutStatus);
@@ -402,7 +574,7 @@ function registerIpc() {
   });
   handle(INVOKE.CLEAR_HISTORY, () => store.clearHistory());
 
-  // Rolling mic/meeting-audio transcription. Renderer sends short clips
+  // Rolling mic transcription. Renderer sends short clips
   // (~7s) as base64; we return best-effort transcript text for that clip.
   handle(INVOKE.TRANSCRIBE_CLIP, async (_e, args) => {
     const { audioBase64, mimeType } = validateClip(args);

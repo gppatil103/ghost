@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none';" />
+      content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none';" />
 <title>Ghost</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -11,7 +11,6 @@
   <!-- Icon sprite: 24-unit line icons, stroked with currentColor via .icon -->
   <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
-    <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
     <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></symbol>
     <symbol id="i-transcript" viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h9M5 18h6"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/></symbol>
@@ -19,11 +18,18 @@
     <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="i-retry" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9M4.5 4.5V9H9"/></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7.5 4 12l4.5 4.5M15.5 7.5 20 12l-4.5 4.5M13.5 5l-3 14"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1 .9-1 1.8M12 17h.01"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 5a3 3 0 0 1 6 0M9 11h6M9 15h4"/></symbol>
   </svg>
 
   <div id="panel" class="panel">
@@ -35,36 +41,33 @@
       <div class="brand">
         <span class="dot" id="status-dot"></span>
         <span class="brand-name">Ghost</span>
-        <span id="rec-badge" class="rec-badge hidden" title="Ghost is transcribing audio">REC</span>
+        <span id="rec-badge" class="rec-badge hidden" title="Ghost is transcribing your mic">REC</span>
+        <span id="watch-badge" class="rec-badge rec-badge--watch hidden" title="Every message includes what's on screen right now">WATCH</span>
       </div>
 
       <div class="titlebar-controls">
-        <div class="capture-group" role="group" aria-label="Capture">
+        <!-- One glass pill: capture toggles | smart mode | new chat | settings -->
+        <div class="capture-group" role="toolbar" aria-label="Tools">
           <button id="btn-mic" class="icon-toggle" type="button" aria-label="Listen to mic" title="Listen to mic (Ctrl+Shift+L)"><svg class="icon"><use href="#i-mic"/></svg></button>
-          <button id="btn-meeting" class="icon-toggle" type="button" aria-label="Listen to meeting audio" title="Listen to meeting / system audio"><svg class="icon"><use href="#i-speaker"/></svg></button>
-          <button id="btn-screen" class="icon-toggle" type="button" aria-label="Attach a screenshot" title="Look at the screen once"><svg class="icon"><use href="#i-screen"/></svg></button>
+          <button id="btn-screen" class="icon-toggle" type="button" aria-label="Attach a screenshot" title="Screenshot: drag an area, or click for the whole screen"><svg class="icon"><use href="#i-screen"/></svg></button>
+          <button id="btn-watch" class="icon-toggle" type="button" aria-label="Watch the screen" title="Watch mode: every message includes what's on screen right now"><svg class="icon"><use href="#i-eye"/></svg></button>
           <button id="btn-transcript" class="icon-toggle" type="button" aria-label="Show live transcript" title="Show the live transcript" hidden><svg class="icon"><use href="#i-transcript"/></svg></button>
+          <span class="tool-divider" aria-hidden="true"></span>
+          <label class="smart-toggle icon-btn" title="Smart mode: slower, higher-quality model (Ctrl+Shift+S)">
+            <input type="checkbox" id="smart-toggle" aria-label="Smart mode" />
+            <svg class="icon"><use href="#i-bolt"/></svg>
+          </label>
+          <span class="tool-divider" aria-hidden="true"></span>
+          <button id="btn-new-chat" class="icon-btn" type="button" aria-label="New chat" title="New chat — forget this conversation"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <span class="tool-divider" aria-hidden="true"></span>
+          <button id="btn-settings" class="icon-btn" type="button" aria-label="Settings" title="Settings"><svg class="icon"><use href="#i-gear"/></svg></button>
         </div>
 
-        <label class="smart-toggle icon-btn" title="Smart mode: slower, higher-quality model (Ctrl+Shift+S)">
-          <input type="checkbox" id="smart-toggle" aria-label="Smart mode" />
-          <svg class="icon"><use href="#i-bolt"/></svg>
-        </label>
-        <button id="btn-new-chat" class="icon-btn" type="button" aria-label="New chat" title="New chat — forget this conversation"><svg class="icon"><use href="#i-plus"/></svg></button>
-        <button id="btn-settings" class="icon-btn" type="button" aria-label="Settings" title="Settings"><svg class="icon"><use href="#i-gear"/></svg></button>
+        <button id="btn-maximize" class="icon-btn" type="button" aria-label="Maximize" title="Fill the screen"><svg class="icon"><use id="maximize-icon" href="#i-expand"/></svg></button>
         <button id="btn-minimize" class="icon-btn" type="button" aria-label="Hide" title="Hide (Ctrl+Shift+G)"><svg class="icon"><use href="#i-minus"/></svg></button>
         <button id="btn-close" class="icon-btn icon-btn--close" type="button" aria-label="Quit Ghost" title="Quit Ghost"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
     </header>
-
-    <!-- Action chips -->
-    <div class="chips" role="toolbar" aria-label="Actions">
-      <button class="chip action-btn" type="button" data-action="assist">Assist</button>
-      <button class="chip action-btn" type="button" data-action="what_to_say">What to say</button>
-      <button class="chip action-btn" type="button" data-action="follow_up">Follow-ups</button>
-      <button class="chip action-btn" type="button" data-action="recap">Recap</button>
-      <button class="chip chip--accent action-btn" type="button" data-action="solve_code" title="Solve the coding problem on screen"><svg class="icon icon--sm"><use href="#i-code"/></svg>Solve code</button>
-    </div>
 
     <!-- Live transcript drawer -->
     <div id="transcript-panel" class="drawer">
@@ -79,9 +82,12 @@
 
     <!-- Response stream -->
     <div id="response" class="response no-drag">
-      <div class="empty-state">
-        Ask anything, or pick an action above. Ghost only sees your screen or
-        hears audio when you turn on a capture icon.
+      <!-- The list background drags the window; each entry opts out so its text stays selectable. -->
+      <div id="response-list" class="response-list">
+        <div class="empty-state">
+          Ask anything, or type / for actions. Ghost only sees your screen or
+          hears your mic when you turn on a capture icon.
+        </div>
       </div>
     </div>
 
@@ -90,13 +96,45 @@
 
     <!-- Floating input bar -->
     <form id="ask-form" class="inputbar">
+      <!-- "/" action menu: pops up above the box while the input starts with "/" -->
+      <div id="slash-menu" class="slash-menu" role="listbox" aria-label="Actions" hidden>
+        <button class="slash-item" type="button" role="option" data-action="assist" aria-selected="true">
+          <svg class="icon"><use href="#i-sparkle"/></svg>
+          <span class="slash-text"><span class="slash-name">/assist</span><span class="slash-desc">Help with whatever is on screen or in the transcript</span></span>
+        </button>
+        <button class="slash-item" type="button" role="option" data-action="what_to_say" aria-selected="false">
+          <svg class="icon"><use href="#i-chat"/></svg>
+          <span class="slash-text"><span class="slash-name">/what-to-say</span><span class="slash-desc">Suggest 2–3 lines you could say next</span></span>
+        </button>
+        <button class="slash-item" type="button" role="option" data-action="follow_up" aria-selected="false">
+          <svg class="icon"><use href="#i-help"/></svg>
+          <span class="slash-text"><span class="slash-name">/follow-ups</span><span class="slash-desc">Sharp follow-up questions to ask</span></span>
+        </button>
+        <button class="slash-item" type="button" role="option" data-action="recap" aria-selected="false">
+          <svg class="icon"><use href="#i-transcript"/></svg>
+          <span class="slash-text"><span class="slash-name">/recap</span><span class="slash-desc">Key points, decisions and open items so far</span></span>
+        </button>
+        <button class="slash-item" type="button" role="option" data-action="solve_code" aria-selected="false">
+          <svg class="icon"><use href="#i-code"/></svg>
+          <span class="slash-text"><span class="slash-name">/solve-code</span><span class="slash-desc">Solve the coding problem on screen</span></span>
+        </button>
+        <button class="slash-item" type="button" role="option" data-action="clipboard" aria-selected="false">
+          <svg class="icon"><use href="#i-clipboard"/></svg>
+          <span class="slash-text"><span class="slash-name">/clipboard</span><span class="slash-desc">Explain the text or image you just copied</span></span>
+        </button>
+        <!-- User-defined actions from Settings → Actions are rendered here -->
+        <div id="slash-custom" class="slash-custom"></div>
+      </div>
+
       <div id="attachment-preview" class="attachment hidden">
         <img id="attachment-thumb-img" src="" alt="Attached screenshot" />
         <button id="attachment-remove" class="attachment-remove" type="button" aria-label="Remove screenshot" title="Remove screenshot"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
-      <input id="ask-input" type="text" placeholder="Ask anything…" aria-label="Ask anything" autocomplete="off" maxlength="8000" />
-      <button type="button" id="btn-stop" class="round-btn round-btn--stop" aria-label="Stop generating" title="Stop generating"><svg class="icon"><use href="#i-stop"/></svg></button>
-      <button type="submit" id="ask-send" class="round-btn round-btn--send" aria-label="Send" title="Send"><svg class="icon"><use href="#i-send"/></svg></button>
+      <input id="ask-input" type="text" placeholder="Ask anything, or type / for actions…" aria-label="Ask anything" autocomplete="off" maxlength="8000" />
+      <div class="send-slot">
+        <button type="button" id="btn-stop" class="round-btn round-btn--stop" aria-label="Stop generating" title="Stop generating"><svg class="icon"><use href="#i-stop"/></svg></button>
+        <button type="submit" id="ask-send" class="round-btn round-btn--send" aria-label="Send" title="Send"><svg class="icon"><use href="#i-send"/></svg></button>
+      </div>
     </form>
   </div>
 
@@ -111,6 +149,7 @@
       <div class="segmented" role="tablist" aria-label="Settings sections">
         <span class="seg-pill" aria-hidden="true"></span>
         <button class="seg" type="button" role="tab" data-tab="ai" id="tab-ai" aria-controls="page-ai" aria-selected="true">AI</button>
+        <button class="seg" type="button" role="tab" data-tab="actions" id="tab-actions" aria-controls="page-actions" aria-selected="false">Actions</button>
         <button class="seg" type="button" role="tab" data-tab="look" id="tab-look" aria-controls="page-look" aria-selected="false">Look</button>
         <button class="seg" type="button" role="tab" data-tab="privacy" id="tab-privacy" aria-controls="page-privacy" aria-selected="false">Privacy</button>
         <button class="seg" type="button" role="tab" data-tab="keys" id="tab-keys" aria-controls="page-keys" aria-selected="false">Keys</button>
@@ -151,6 +190,20 @@
           </div>
         </section>
 
+        <!-- Actions -->
+        <section class="tab-page" data-tab="actions" id="page-actions" role="tabpanel" aria-labelledby="tab-actions">
+          <div class="group">
+            <div class="group-title">Custom / actions</div>
+            <p class="muted">Your own slash commands. Type <kbd>/name</kbd> in the input box to run one. The prompt tells Ghost what to do with your screen, transcript or question — for example <i>Translate everything on screen to Spanish</i>.</p>
+            <div id="custom-action-list" class="custom-actions"></div>
+            <div class="row">
+              <button id="custom-action-add" class="btn" type="button">Add action</button>
+              <button id="custom-actions-save" class="btn btn--primary" type="button">Save actions</button>
+              <span id="custom-actions-status" class="status-line"></span>
+            </div>
+          </div>
+        </section>
+
         <!-- Look -->
         <section class="tab-page" data-tab="look" id="page-look" role="tabpanel" aria-labelledby="tab-look">
           <div class="group">
@@ -171,16 +224,8 @@
             </div>
           </div>
           <div class="group">
-            <div class="group-title">Accent</div>
-            <div class="swatches" role="radiogroup" aria-label="Accent color">
-              <button class="swatch" type="button" role="radio" data-accent="blue" aria-label="Blue" aria-checked="true"></button>
-              <button class="swatch" type="button" role="radio" data-accent="violet" aria-label="Violet" aria-checked="false"></button>
-              <button class="swatch" type="button" role="radio" data-accent="green" aria-label="Green" aria-checked="false"></button>
-              <button class="swatch" type="button" role="radio" data-accent="orange" aria-label="Orange" aria-checked="false"></button>
-            </div>
-          </div>
-          <div class="group">
             <div class="group-title">Window</div>
+            <p class="muted">At 100% the panel is solid; lower it to see what's behind.</p>
             <label class="range-row">
               <span>Opacity</span>
               <input type="range" id="panel-opacity" min="0.2" max="1" step="0.02" />
@@ -199,7 +244,7 @@
             </label>
             <label class="check-row">
               <input type="checkbox" id="keep-transcript" />
-              <span>Keep the audio transcript after Mic / Meeting stops <span class="muted">(otherwise it's wiped)</span></span>
+              <span>Keep the mic transcript after the mic stops <span class="muted">(otherwise it's wiped)</span></span>
             </label>
           </div>
 
@@ -222,25 +267,10 @@
                 meeting counterparts' policies on recording and AI use.
               </p>
               <p class="muted">
-                <b>Recording consent:</b> Meeting capture sends other people's
-                voices to your AI provider. Many places require everyone on a
-                call to agree before it's recorded or transcribed — ask first.
-              </p>
-            </details>
-          </div>
-
-          <div class="group">
-            <div class="group-title">Meeting audio</div>
-            <details class="learn-more">
-              <summary>Learn more about Zoom and headsets</summary>
-              <p class="muted">
-                To let Ghost hear the other participants (not just you), Zoom
-                needs to actually be playing their audio through your speakers.
-                If you're on a headset, Ghost's "Meeting" capture uses Windows
-                system-audio loopback, so muting your speakers or routing audio
-                through an app-exclusive device will make meeting audio
-                invisible to Ghost. Your own mic audio is captured separately
-                and doesn't depend on this.
+                <b>Recording consent:</b> the mic can pick up other people's
+                voices, which are then sent to your AI provider. Many places
+                require everyone to agree before a conversation is recorded or
+                transcribed — ask first.
               </p>
             </details>
           </div>

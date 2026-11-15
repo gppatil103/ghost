@@ -149,6 +149,73 @@ describe('other validators', () => {
   });
 });
 
+describe('custom "/" actions', () => {
+  it('accepts built-in and custom action ids, rejects malformed ones', () => {
+    expect(v.validateAction('assist')).toBe('assist');
+    expect(v.validateAction('custom:translate-es')).toBe('custom:translate-es');
+    expect(() => v.validateAction('custom:Bad Name')).toThrow(/custom action/);
+    expect(() => v.validateAction('custom:')).toThrow(/custom action/);
+    expect(() => v.validateAction('translate-es')).toThrow(/Unknown action/);
+  });
+
+  it('normalises a valid list', () => {
+    expect(
+      v.validateSettingsPatch({
+        customActions: [{ id: ' sql ', name: '  ', prompt: ' Write the SQL for what is on screen. ' }],
+      }),
+    ).toEqual({
+      customActions: [{ id: 'sql', name: 'sql', prompt: 'Write the SQL for what is on screen.' }],
+    });
+  });
+
+  it('rejects reserved, duplicate, empty and oversized actions', () => {
+    const bad = (list, re) => expect(() => v.validateSettingsPatch({ customActions: list })).toThrow(re);
+    bad('nope', /list/);
+    bad([{ id: 'recap', prompt: 'x' }], /built-in/);
+    bad([{ id: 'solve-code', prompt: 'x' }], /built-in/);
+    bad([{ id: 'clipboard', prompt: 'x' }], /built-in/);
+    bad(
+      [
+        { id: 'a', prompt: 'x' },
+        { id: 'a', prompt: 'y' },
+      ],
+      /both called/,
+    );
+    bad([{ id: 'a', prompt: '  ' }], /needs a prompt/);
+    bad([{ id: 'a', prompt: 'x'.repeat(2001) }], /too long/);
+    bad([{ id: 'Has Caps', prompt: 'x' }], /lowercase/);
+    bad(
+      Array.from({ length: 21 }, (_, i) => ({ id: `a${i}`, prompt: 'x' })),
+      /At most 20/,
+    );
+  });
+});
+
+describe('validateRegionResult', () => {
+  it('passes through cancel and whole-screen results', () => {
+    expect(v.validateRegionResult({ cancelled: true })).toEqual({ cancelled: true, rect: null });
+    expect(v.validateRegionResult({ cancelled: false, rect: null })).toEqual({
+      cancelled: false,
+      rect: null,
+    });
+  });
+
+  it('rounds a rectangle and rejects bad ones', () => {
+    expect(v.validateRegionResult({ rect: { x: 1.4, y: 2.6, width: 10.5, height: 20 } })).toEqual({
+      cancelled: false,
+      rect: { x: 1, y: 3, width: 11, height: 20 },
+    });
+    expect(() => v.validateRegionResult({ rect: { x: -1, y: 0, width: 10, height: 10 } })).toThrow(
+      /rectangle/,
+    );
+    expect(() => v.validateRegionResult({ rect: { x: 0, y: 0, width: 0, height: 10 } })).toThrow(/rectangle/);
+    expect(() => v.validateRegionResult({ rect: { x: 0, y: 0, width: 10, height: 1e9 } })).toThrow(
+      /rectangle/,
+    );
+    expect(() => v.validateRegionResult(null)).toThrow(/region/);
+  });
+});
+
 describe('RateLimiter', () => {
   it('allows max calls per window', () => {
     let t = 0;

@@ -3,11 +3,13 @@
 
   const statusDot = $('#status-dot');
   const recBadge = $('#rec-badge');
-  const responseEl = $('#response');
+  const responseEl = $('#response'); // scroll container
+  const listEl = $('#response-list'); // where entries go; its background drags the window
   const smartToggle = $('#smart-toggle');
   const btnMic = $('#btn-mic');
-  const btnMeeting = $('#btn-meeting');
   const btnScreen = $('#btn-screen');
+  const btnWatch = $('#btn-watch');
+  const watchBadge = $('#watch-badge');
   const btnTranscript = $('#btn-transcript');
   const transcriptPanel = $('#transcript-panel');
   const transcriptText = $('#transcript-text');
@@ -24,7 +26,9 @@
   const MAX_STORED_TURNS = 200; // turns kept locally / persisted
 
   let settings = null;
-  let pendingScreenshot = null; // { base64, mimeType } set by "Screen" pill, consumed by next action
+  let pendingScreenshot = null; // { base64, mimeType } attached to every message until removed
+  let customActions = []; // settings.customActions, mirrored into the "/" menu
+  let compact = false; // one-line "quick ask" bar (see setCompact)
   let reqCounter = 0;
   let history = []; // [{ role: 'user' | 'assistant', text }]
   let activeRequestId = null;
@@ -39,12 +43,31 @@
     solve_code: 'Solve coding problem',
   };
 
+  function actionLabel(actionId) {
+    if (ACTION_LABELS[actionId]) return ACTION_LABELS[actionId];
+    if (actionId && actionId.startsWith('custom:')) {
+      const custom = customActions.find((a) => `custom:${a.id}` === actionId);
+      return custom ? custom.name : actionId.slice('custom:'.length);
+    }
+    return actionId;
+  }
+
   // ipcRenderer.invoke wraps main-process errors; show just the message.
   function ipcErrorMessage(err) {
     return String((err && err.message) || err).replace(
       /^Error invoking remote method '[^']+': (Error: )?/,
       '',
     );
+  }
+
+  // An inline <svg><use href="#id"/></svg> for the icon sprite.
+  function iconSvg(id) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#${id}`);
+    svg.appendChild(use);
+    return svg;
   }
 
   // ---------- toast (transient status line) ----------
@@ -56,20 +79,6 @@
     // Warnings and the consent reminder stay up longer.
     const ms = /⚠|agreed/.test(text) ? 8000 : 4000;
     toastTimer = setTimeout(() => captureHint.classList.remove('show'), ms);
-  }
-
-  // ---------- accent ----------
-  const ACCENTS = { blue: '#5b8cff', violet: '#9b7bff', green: '#34c77b', orange: '#ff9f43' };
-  // Companion hue for the ambient glow behind the glass, one per accent.
-  const ACCENT_GLOWS = { blue: '#b26bff', violet: '#ff6fb5', green: '#2fb8d6', orange: '#ff5f8a' };
-  function applyAccent(id) {
-    const key = Object.hasOwn(ACCENTS, id) ? id : 'blue';
-    const root = document.documentElement.style;
-    root.setProperty('--accent', ACCENTS[key] || ACCENTS.blue);
-    root.setProperty('--accent-2', ACCENT_GLOWS[key] || ACCENT_GLOWS.blue);
-    document.querySelectorAll('.swatch').forEach((s) => {
-      s.setAttribute('aria-checked', String(s.dataset.accent === key));
-    });
   }
 
   // ---------- theme ----------
@@ -135,7 +144,7 @@
     settings = await window.ghost.getSettings();
     smartToggle.checked = !!settings.smartMode;
     applyTheme(settings.theme);
-    applyAccent(settings.accent);
+    syncCustomActions(settings);
     syncOpacityControls(settings.panelOpacity);
     if (settings.saveHistory) {
       history = await window.ghost.getHistory().catch(() => []);
@@ -148,10 +157,19 @@
   window.ghost.onShowTutorial(() => window.ghostTutorial.start());
   window.ghost.onOpenSettings(() => openSettings());
 
-  // ---------- header controls ----------
+  // ---------- window controls ----------
   $('#btn-minimize').addEventListener('click', () => window.ghost.hidePanel());
   $('#btn-close').addEventListener('click', () => window.ghost.quitApp());
   $('#btn-new-chat').addEventListener('click', newChat);
+
+  // Fill the work area / go back to the small panel; main does the resizing.
+  const btnMaximize = $('#btn-maximize');
+  btnMaximize.addEventListener('click', async () => {
+    const maximized = await window.ghost.toggleMaximize();
+    $('#maximize-icon').setAttribute('href', maximized ? '#i-collapse' : '#i-expand');
+    btnMaximize.setAttribute('aria-label', maximized ? 'Restore size' : 'Maximize');
+    btnMaximize.title = maximized ? 'Back to the small panel' : 'Fill the screen';
+  });
 
   smartToggle.addEventListener('change', () => {
     settings.smartMode = smartToggle.checked;
@@ -167,7 +185,9 @@
     history = [];
     window.ghost.clearHistory();
     window.ghostCapture.clearTranscript();
-    responseEl.replaceChildren(emptyState());
+    pendingScreenshot = null;
+    hideAttachmentPreview();
+    listEl.replaceChildren(emptyState());
     showToast('New chat — Ghost has forgotten the previous conversation.');
   }
 
@@ -175,7 +195,7 @@
     const div = document.createElement('div');
     div.className = 'empty-state';
     div.textContent =
-      'Ask anything, or pick an action above. Ghost only sees your screen or hears audio when you turn on a capture icon.';
+      'Ask anything, or type / for actions. Ghost only sees your screen or hears your mic when you turn on a capture icon.';
     return div;
   }
 
@@ -184,28 +204,64 @@
   // Any transcript text is sent with every action, so its button stays visible
   // (to view or Clear it) while capture is on or text remains.
   function updateRecBadge() {
-    const on = window.ghostCapture.isMicOn() || window.ghostCapture.isMeetingOn();
+    const on = window.ghostCapture.isMicOn();
     const hasText = !!window.ghostCapture.getCombinedTranscript();
     recBadge.classList.toggle('hidden', !on);
     btnTranscript.hidden = !(on || hasText);
     if (btnTranscript.hidden) setTranscriptOpen(false);
   }
 
+  // Region capture: main hides the panel, freezes the display and shows a
+  // selector; the crop comes back here. It stays attached for follow-ups.
   btnScreen.addEventListener('click', async () => {
     try {
       setStatus('busy');
-      showToast('Grabbing a screenshot…');
-      pendingScreenshot = await window.ghostCapture.captureScreenshot();
-      showToast("Screenshot captured — it'll be used on your next action.");
+      const shot = await window.ghost.captureRegion();
+      if (!shot) {
+        showToast('Capture cancelled.');
+        setStatus('idle');
+        return;
+      }
+      pendingScreenshot = shot;
+      showAttachmentPreview(shot);
       btnScreen.classList.add('on');
-      showAttachmentPreview(pendingScreenshot);
+      showToast('Screenshot attached — it stays with every message until you remove it (×).');
       setStatus('active');
-    } catch {
-      showToast('Screenshot cancelled or blocked.');
+      askInput.focus();
+    } catch (err) {
+      showToast(`⚠ Couldn't capture the screen: ${ipcErrorMessage(err)}`);
       setStatus('idle');
     } finally {
       setTimeout(() => btnScreen.classList.remove('on'), 1500);
     }
+  });
+
+  // Watch mode: one live screen stream; a frame is grabbed with each message.
+  function updateWatchUi() {
+    const on = window.ghostCapture.isWatchOn();
+    btnWatch.classList.toggle('on', on);
+    watchBadge.classList.toggle('hidden', !on);
+  }
+  btnWatch.addEventListener('click', async () => {
+    if (window.ghostCapture.isWatchOn()) {
+      window.ghostCapture.stopWatch();
+      updateWatchUi();
+      showToast('Stopped watching the screen.');
+      return;
+    }
+    try {
+      await window.ghostCapture.startWatch();
+      updateWatchUi();
+      showToast(
+        'Watching your screen — every message now includes what is on screen at that moment. Click the eye again to stop.',
+      );
+    } catch {
+      showToast('Screen watch was cancelled or blocked.');
+    }
+  });
+  window.ghostCapture.onWatchEnded(() => {
+    updateWatchUi();
+    showToast('Screen watch ended.');
   });
 
   function onCaptureStopped(source) {
@@ -247,35 +303,10 @@
     showToast(`⚠ Couldn't transcribe audio: ${msg}`);
   });
 
-  btnMeeting.addEventListener('click', async () => {
-    if (window.ghostCapture.isMeetingOn()) {
-      window.ghostCapture.stopMeeting();
-      btnMeeting.classList.remove('on');
-      showToast(
-        settings.keepTranscriptAfterStop
-          ? 'Meeting audio stopped.'
-          : 'Meeting audio stopped — its transcript was cleared.',
-      );
-      onCaptureStopped('meeting');
-      return;
-    }
-    try {
-      await window.ghostCapture.startMeeting(() => setStatus('active'));
-      btnMeeting.classList.add('on');
-      showToast(
-        'Transcribing meeting/system audio — make sure everyone on the call has agreed to this. Click again to stop.',
-      );
-      setStatus('active');
-    } catch {
-      showToast('Meeting-audio capture was cancelled or blocked.');
-    }
-    updateRecBadge();
-  });
-
   // ---------- live transcript viewer ----------
   function renderTranscript() {
     const text = window.ghostCapture.getCombinedTranscript();
-    transcriptText.textContent = text || 'Nothing transcribed yet. Turn on Mic or Meeting.';
+    transcriptText.textContent = text || 'Nothing transcribed yet. Turn on the mic.';
     transcriptText.scrollTop = transcriptText.scrollHeight;
   }
 
@@ -294,19 +325,6 @@
     updateRecBadge();
   });
 
-  // A plain mouse wheel scrolls the horizontal chip row (Chromium only maps
-  // Shift+wheel to horizontal scrolling on its own).
-  const chips = $('.chips');
-  chips.addEventListener(
-    'wheel',
-    (e) => {
-      if (e.deltaX !== 0 || chips.scrollWidth <= chips.clientWidth) return;
-      chips.scrollLeft += e.deltaY;
-      e.preventDefault();
-    },
-    { passive: false },
-  );
-
   function setStatus(mode) {
     statusDot.className = 'dot' + (mode === 'busy' ? ' busy' : mode === 'active' ? ' active' : '');
   }
@@ -316,9 +334,137 @@
     askSend.disabled = busy;
   }
 
-  // ---------- actions ----------
-  document.querySelectorAll('.action-btn').forEach((btn) => {
-    btn.addEventListener('click', () => runAction(btn.dataset.action));
+  // ---------- "/" action menu ----------
+  // Typing "/" in the input lists the actions, like slash commands; whatever
+  // follows the "/" filters them. Enter, Tab or a click runs the highlighted
+  // one; Esc closes. If nothing matches, the text is sent as a normal question.
+  const slashMenu = $('#slash-menu');
+  const slashCustom = $('#slash-custom');
+  const slashItems = () => [...slashMenu.querySelectorAll('.slash-item')]; // built-ins + custom
+  let slashIndex = 0;
+
+  const squash = (s) => s.toLowerCase().replace(/[\s_-]/g, '');
+  const visibleSlashItems = () => slashItems().filter((item) => !item.hidden);
+
+  function setSlashActive(index, visible = visibleSlashItems()) {
+    slashIndex = index;
+    visible.forEach((item, i) => {
+      item.classList.toggle('active', i === index);
+      item.setAttribute('aria-selected', String(i === index));
+    });
+  }
+
+  function closeSlashMenu() {
+    slashMenu.hidden = true;
+    slashIndex = 0;
+  }
+
+  function updateSlashMenu() {
+    const value = askInput.value;
+    if (!value.startsWith('/')) return closeSlashMenu();
+    const filter = squash(value.slice(1));
+    const visible = slashItems().filter((item) => {
+      item.hidden = !squash(item.dataset.action + item.textContent).includes(filter);
+      return !item.hidden;
+    });
+    if (!visible.length) return closeSlashMenu();
+    slashMenu.hidden = false;
+    setSlashActive(Math.min(slashIndex, visible.length - 1), visible);
+  }
+
+  function chooseSlash(item) {
+    closeSlashMenu();
+    askInput.value = '';
+    if (item.dataset.action === 'clipboard') explainClipboard();
+    else runAction(item.dataset.action);
+  }
+
+  // Custom actions from Settings → Actions, appended after the built-ins.
+  function syncCustomActions(s) {
+    customActions = Array.isArray(s.customActions) ? s.customActions : [];
+    slashCustom.replaceChildren(
+      ...customActions.map((a) => {
+        const item = document.createElement('button');
+        item.className = 'slash-item';
+        item.type = 'button';
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', 'false');
+        item.dataset.action = `custom:${a.id}`;
+        const svg = iconSvg('i-sparkle');
+        const text = document.createElement('span');
+        text.className = 'slash-text';
+        const name = document.createElement('span');
+        name.className = 'slash-name';
+        name.textContent = `/${a.id}`;
+        const desc = document.createElement('span');
+        desc.className = 'slash-desc';
+        desc.textContent = a.name !== a.id ? a.name : a.prompt;
+        text.append(name, desc);
+        item.append(svg, text);
+        return item;
+      }),
+    );
+  }
+
+  // "/clipboard": an image is attached like a screenshot; text becomes the question.
+  async function explainClipboard() {
+    let clip;
+    try {
+      clip = await window.ghost.readClipboard();
+    } catch (err) {
+      showToast(`⚠ ${ipcErrorMessage(err)}`);
+      return;
+    }
+    if (clip.image) {
+      pendingScreenshot = clip.image;
+      showAttachmentPreview(clip.image);
+      runAction('assist', 'Explain what is in this image from my clipboard.');
+    } else if (clip.text && clip.text.trim()) {
+      runAction('ask_anything', `Explain this (from my clipboard):\n\n${clip.text.trim()}`);
+    } else {
+      showToast('Clipboard is empty — copy some text or an image first.');
+    }
+  }
+
+  // Pasting an image into the input attaches it (main re-encodes it as JPEG).
+  askInput.addEventListener('paste', async (e) => {
+    const hasImage = [...((e.clipboardData && e.clipboardData.items) || [])].some((i) =>
+      i.type.startsWith('image/'),
+    );
+    if (!hasImage) return;
+    e.preventDefault();
+    try {
+      const clip = await window.ghost.readClipboard();
+      if (!clip.image) return;
+      pendingScreenshot = clip.image;
+      showAttachmentPreview(clip.image);
+      showToast('Image attached from the clipboard.');
+    } catch (err) {
+      showToast(`⚠ ${ipcErrorMessage(err)}`);
+    }
+  });
+
+  askInput.addEventListener('input', updateSlashMenu);
+  askInput.addEventListener('blur', closeSlashMenu);
+  askInput.addEventListener('keydown', (e) => {
+    if (slashMenu.hidden) return;
+    const visible = visibleSlashItems();
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setSlashActive((slashIndex + step + visible.length) % visible.length, visible);
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault(); // don't submit "/recap" as a question
+      chooseSlash(visible[slashIndex]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSlashMenu();
+    }
+  });
+  slashMenu.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus (and the menu) while clicking
+  slashMenu.addEventListener('click', (e) => {
+    const item = e.target.closest('.slash-item');
+    if (item) chooseSlash(item);
   });
 
   // With the mic on, Enter sends what you said (plus anything typed) as the
@@ -413,7 +559,7 @@
   function describeUserTurn(actionId, typedQuestion, hadImage, hadTranscript) {
     if (typedQuestion) return typedQuestion;
     const extras = [hadImage && 'a screenshot', hadTranscript && 'the audio transcript'].filter(Boolean);
-    return `[${ACTION_LABELS[actionId] || actionId}${extras.length ? ` using ${extras.join(' and ')}` : ''}]`;
+    return `[${actionLabel(actionId)}${extras.length ? ` using ${extras.join(' and ')}` : ''}]`;
   }
 
   function remember(userText, assistantText) {
@@ -433,7 +579,18 @@
     const requestId = `req_${Date.now()}_${++reqCounter}`;
     const entry = createEntry(actionId, typedQuestion);
 
+    if (compact) setCompact(false); // the answer needs the full panel
+
     let image = retryImage || pendingScreenshot;
+
+    // Watch mode: what's on screen at this moment, unless a screenshot is attached.
+    if (!image && window.ghostCapture.isWatchOn()) {
+      try {
+        image = await window.ghostCapture.grabWatchFrame();
+      } catch (err) {
+        console.warn('watch frame failed', err);
+      }
+    }
 
     // "Solve coding problem" always wants a fresh screenshot if we don't
     // already have one queued, since it's meaningless without the screen.
@@ -452,9 +609,7 @@
       }
     }
 
-    pendingScreenshot = null; // consume
-    hideAttachmentPreview();
-
+    // The attached screenshot is kept for follow-up questions; × removes it.
     const transcript = window.ghostCapture.getCombinedTranscript();
     const payload = {
       requestId,
@@ -500,7 +655,7 @@
     div.className = 'entry';
     const tag = document.createElement('span');
     tag.className = 'tag';
-    tag.textContent = ACTION_LABELS[actionId] || 'Ghost';
+    tag.textContent = actionLabel(actionId) || 'Ghost';
     div.appendChild(tag);
     if (typedQuestion) {
       const user = document.createElement('div');
@@ -514,7 +669,7 @@
     cursor.className = 'cursor-blink';
     body.appendChild(cursor);
     div.appendChild(body);
-    responseEl.appendChild(div);
+    listEl.appendChild(div);
     responseEl.scrollTop = responseEl.scrollHeight;
     return div;
   }
@@ -667,7 +822,7 @@
     const note = document.createElement('div');
     note.className = 'history-note';
     note.textContent = 'Restored from your last session — press ＋ for a new chat.';
-    responseEl.appendChild(note);
+    listEl.appendChild(note);
     responseEl.scrollTop = responseEl.scrollHeight;
   }
 
@@ -698,6 +853,7 @@
     toggle_smart: 'Toggle Smart mode',
     toggle_clickthrough: 'Toggle click-through',
     toggle_mic: 'Toggle mic',
+    quick_ask: 'Quick ask (one-line bar)',
   };
 
   $('#btn-settings').addEventListener('click', openSettings);
@@ -706,11 +862,36 @@
     if (e.target === settingsOverlay) closeOverlay(settingsOverlay); // tap the scrim
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && settingsOverlay.classList.contains('open')) closeOverlay(settingsOverlay);
+    if (e.key !== 'Escape') return;
+    if (settingsOverlay.classList.contains('open')) closeOverlay(settingsOverlay);
+    else if (compact && slashMenu.hidden) {
+      // Esc in the quick-ask bar dismisses it, Spotlight-style.
+      setCompact(false);
+      window.ghost.hidePanel();
+    }
   });
 
+  // ---------- compact "quick ask" bar ----------
+  // Shortcut → a one-line input at the panel's spot; the first answer (or
+  // Esc, or opening Settings) brings the full panel back.
+  async function setCompact(on) {
+    if (compact === on) return;
+    compact = on;
+    document.body.classList.toggle('compact', on);
+    try {
+      await window.ghost.setCompact(on);
+    } catch (err) {
+      console.warn('compact mode failed', err);
+    }
+    if (on) {
+      askInput.focus();
+      askInput.select();
+    }
+  }
+  window.ghost.onQuickAsk(() => setCompact(true));
+
   // ---------- settings tabs (segmented control) ----------
-  const TABS = ['ai', 'look', 'privacy', 'keys'];
+  const TABS = ['ai', 'actions', 'look', 'privacy', 'keys'];
   const segmented = $('.segmented');
   let lastTab = 'ai';
 
@@ -738,14 +919,6 @@
     segmented.querySelector(`.seg[data-tab="${next}"]`).focus();
   });
 
-  // ---------- accent swatches ----------
-  document.querySelectorAll('.swatch').forEach((s) =>
-    s.addEventListener('click', () => {
-      applyAccent(s.dataset.accent);
-      saveSetting({ accent: s.dataset.accent });
-    }),
-  );
-
   // ---------- theme picker ----------
   document.querySelectorAll('.theme-option').forEach((b) =>
     b.addEventListener('click', () => {
@@ -754,17 +927,91 @@
     }),
   );
 
+  // ---------- custom action editor (Settings → Actions) ----------
+  const customActionList = $('#custom-action-list');
+  const customActionsStatus = $('#custom-actions-status');
+
+  function customActionRow(a = { id: '', name: '', prompt: '' }) {
+    const row = document.createElement('div');
+    row.className = 'custom-action';
+    const head = document.createElement('div');
+    head.className = 'custom-action-head';
+    const prefix = document.createElement('span');
+    prefix.className = 'slash-prefix';
+    prefix.textContent = '/';
+    const id = document.createElement('input');
+    id.className = 'field field--mono ca-id';
+    id.placeholder = 'name';
+    id.maxLength = 32;
+    id.spellcheck = false;
+    id.setAttribute('aria-label', 'Slash command name');
+    id.value = a.id;
+    const name = document.createElement('input');
+    name.className = 'field ca-name';
+    name.placeholder = 'Label (optional)';
+    name.maxLength = 40;
+    name.setAttribute('aria-label', 'Label');
+    name.value = a.name === a.id ? '' : a.name;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'icon-btn ca-delete';
+    del.setAttribute('aria-label', 'Delete action');
+    del.title = 'Delete';
+    del.appendChild(iconSvg('i-x'));
+    del.addEventListener('click', () => row.remove());
+    head.append(prefix, id, name, del);
+    const prompt = document.createElement('textarea');
+    prompt.className = 'field ca-prompt';
+    prompt.rows = 3;
+    prompt.maxLength = 2000;
+    prompt.placeholder =
+      'What should Ghost do? e.g. Translate everything on screen to Spanish, keeping the layout.';
+    prompt.setAttribute('aria-label', 'Prompt');
+    prompt.value = a.prompt;
+    row.append(head, prompt);
+    return row;
+  }
+
+  function renderCustomActionEditor() {
+    customActionList.replaceChildren(...customActions.map((a) => customActionRow(a)));
+  }
+
+  $('#custom-action-add').addEventListener('click', () => {
+    const row = customActionRow();
+    customActionList.appendChild(row);
+    row.querySelector('.ca-id').focus();
+  });
+
+  $('#custom-actions-save').addEventListener('click', async () => {
+    const list = [...customActionList.querySelectorAll('.custom-action')].map((row) => ({
+      id: row.querySelector('.ca-id').value.trim().toLowerCase(),
+      name: row.querySelector('.ca-name').value.trim(),
+      prompt: row.querySelector('.ca-prompt').value.trim(),
+    }));
+    try {
+      settings = await window.ghost.setSettings({ customActions: list });
+      syncCustomActions(settings);
+      renderCustomActionEditor();
+      setStatusText(customActionsStatus, list.length ? `✓ Saved — type / to use them.` : '✓ Saved.', true);
+    } catch (err) {
+      setStatusText(customActionsStatus, ipcErrorMessage(err), false);
+    }
+  });
+
   function setStatusText(el, text, ok) {
     el.textContent = text;
     el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
   }
 
   async function openSettings() {
+    if (compact) await setCompact(false);
     settings = await window.ghost.getSettings();
     selectTab(lastTab);
     openOverlay(settingsOverlay);
     applyTheme(settings.theme);
-    applyAccent(settings.accent);
+    syncCustomActions(settings);
+    renderCustomActionEditor();
+    customActionsStatus.textContent = '';
     providerSelect.value = settings.provider;
     hideFromCapture.checked = !!settings.hideFromCapture;
     saveHistoryBox.checked = !!settings.saveHistory;

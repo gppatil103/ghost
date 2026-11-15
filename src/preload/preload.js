@@ -24,11 +24,18 @@ contextBridge.exposeInMainWorld('ghost', {
   // window control
   toggleClickThrough: () => ipcRenderer.invoke('toggle-clickthrough'),
   resizePanel: (width, height) => ipcRenderer.invoke('resize-panel', { width, height }),
+  toggleMaximize: () => ipcRenderer.invoke('toggle-maximize'), // resolves to true when now maximized
+  setCompact: (on) => ipcRenderer.invoke('set-compact', on), // one-line "quick ask" bar
   hidePanel: () => ipcRenderer.invoke('hide-panel'),
   quitApp: () => ipcRenderer.invoke('quit-app'),
 
   // capture: must be called right before getDisplayMedia, or main denies it
   armCapture: (kind) => ipcRenderer.invoke('arm-capture', kind),
+  // region capture: main hides the panel, shows a selector, resolves to
+  // { base64, mimeType } or null if cancelled
+  captureRegion: () => ipcRenderer.invoke('capture-region'),
+  regionResult: (result) => ipcRenderer.invoke('region-result', result), // used by region.html
+  readClipboard: () => ipcRenderer.invoke('read-clipboard'), // { image? , text? }
 
   // actions
   runAction: (payload) => ipcRenderer.invoke('run-action', payload),
@@ -45,6 +52,8 @@ contextBridge.exposeInMainWorld('ghost', {
   onToggleSmart: (cb) => on('toggle-smart', cb),
   onToggleMic: (cb) => on('toggle-mic', cb),
   onOpenSettings: (cb) => on('open-settings', cb),
+  onQuickAsk: (cb) => on('quick-ask', cb),
+  onRegionImage: (cb) => on('region-image', cb),
   onShowTutorial: (cb) => on('show-tutorial', cb),
   onClickThroughChanged: (cb) => on('click-through-changed', cb),
   onStreamChunk: (cb) => on('stream-chunk', cb),

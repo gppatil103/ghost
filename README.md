@@ -76,7 +76,7 @@ src/
     styles.css            glass/translucent theme
     renderer.js           UI wiring, conversation state, settings
     markdown.js           safe markdown → DOM renderer (no innerHTML)
-    capture.js            screenshot / mic / meeting-audio capture
+    capture.js            screenshot / mic capture
     tutorial.js           first-run walkthrough
 
 test/                   # Vitest unit tests
@@ -138,7 +138,7 @@ On first launch, enter your API key in Settings — it's encrypted and stored lo
 |---|---|---|
 | Your typed messages + recent conversation | Yes, per request | The provider you selected |
 | Screenshot (only when you click Screen / Solve) | Yes, with that one request | The provider you selected |
-| Mic / meeting audio clips (only while Mic/Meeting is on) | Yes, ~every 7s (silent clips skipped) | OpenAI transcription, or Gemini if no OpenAI key |
+| Mic audio clips (only while the mic is on) | Yes, ~every 7s (silent clips skipped) | OpenAI transcription, or Gemini if no OpenAI key |
 | API keys | Only in the auth header to that provider | — |
 | Settings, saved chats | No | Your `%APPDATA%` folder |
 
@@ -148,7 +148,7 @@ On first launch, enter your API key in Settings — it's encrypted and stored lo
 - The renderer runs **sandboxed** with `contextIsolation` on and `nodeIntegration` off, under a strict Content-Security-Policy. It can only reach a small whitelisted `window.ghost` API.
 - Every IPC call is checked to come from Ghost's own page and is validated (types, sizes, allowlisted providers/actions/settings) and rate-limited.
 - Navigation, pop-up windows, `<webview>` and all browser permissions are blocked, except microphone access and clipboard writes for Ghost's own page.
-- Screen / system-audio capture is only granted for a few seconds after you click **Screen**, **Meeting** or **Solve**, never silently in the background. A red **● REC** badge shows while audio is being transcribed.
+- Screen capture is only granted for a few seconds after you click **Screen** or run **/solve-code**, never silently in the background. A red **● REC** badge shows while the mic is being transcribed.
 - Model replies are rendered as text (markdown is built node-by-node, links are shown as plain text), and captured screen/audio content is marked as untrusted in the prompt to blunt prompt-injection.
 - Requests time out after 2 minutes; OpenAI requests are sent with `store: false`.
 - Packaged builds disable `RunAsNode`, `NODE_OPTIONS` and `--inspect`, and enable ASAR integrity validation via Electron fuses.
@@ -156,7 +156,7 @@ On first launch, enter your API key in Settings — it's encrypted and stored lo
 
 **Please note**
 
-- Meeting capture sends other people's voices to your AI provider. Many jurisdictions require everyone's consent to record or transcribe a call — ask first.
+- The mic can pick up other people's voices, which are sent to your AI provider. Many jurisdictions require everyone's consent to record or transcribe a conversation — ask first.
 - The capture-exclusion toggle is best-effort: not all screen-recording or screen-share tools honor the underlying OS flag.
 
 See [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for the full review and [CHANGELOG.md](CHANGELOG.md) for what changed.

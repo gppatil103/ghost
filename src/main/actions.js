@@ -18,8 +18,8 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 
 const BASE_SYSTEM = `You are Ghost, a private, on-screen AI copilot. You see a
-screenshot and/or a rolling transcript of the user's mic and meeting audio
-that they've explicitly chosen to share with you for this request. Be
+screenshot and/or a rolling transcript of the user's mic that they've
+explicitly chosen to share with you for this request. Be
 concise, concrete, and skimmable — the user is reading you live, often
 mid-conversation or mid-task. Prefer short paragraphs, bullet points, or
 brief code blocks over long essays. Never pad with disclaimers. If context
@@ -65,7 +65,17 @@ one line. This is meant for personal practice and debugging — keep the
 explanation short enough to skim quickly.`,
 };
 
-function buildSystemPrompt(actionId) {
+const CUSTOM_PREFIX = 'custom:';
+
+// Built-in actions have fixed prompts; "custom:<id>" ones come from
+// Settings → Actions, written by the user.
+function buildSystemPrompt(actionId, customActions = []) {
+  if (actionId.startsWith(CUSTOM_PREFIX)) {
+    const id = actionId.slice(CUSTOM_PREFIX.length);
+    const custom = customActions.find((a) => a.id === id);
+    if (!custom) throw new ProviderError(`The "/${id}" action no longer exists — check Settings → Actions.`);
+    return `${BASE_SYSTEM}\n\nTask ("${custom.name}", defined by the user): ${custom.prompt}`;
+  }
   return `${BASE_SYSTEM}\n\n${ACTION_PROMPTS[actionId] || ACTION_PROMPTS[ACTIONS.ASSIST]}`;
 }
 
@@ -129,7 +139,7 @@ async function runAction(payload, { settings, providerName, apiKey, signal }, { 
       apiKey,
       model,
       smart,
-      systemPrompt: buildSystemPrompt(payload.action),
+      systemPrompt: buildSystemPrompt(payload.action, settings.customActions),
       history: normalizeHistory(payload.history),
       userText: buildUserText(payload),
       image: payload.imageBase64
@@ -173,7 +183,7 @@ async function transcribeClip({ audioBuffer, mimeType }, keys, preferred) {
       lastErr = err;
     }
   }
-  throw lastErr || new Error('Mic/meeting-audio transcription needs an OpenAI or Gemini key.');
+  throw lastErr || new Error('Mic transcription needs an OpenAI or Gemini key.');
 }
 
 module.exports = {

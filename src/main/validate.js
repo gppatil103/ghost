@@ -18,7 +18,16 @@ const SHORTCUT_COMMANDS = [
   'toggle_smart',
   'toggle_clickthrough',
   'toggle_mic',
+  'quick_ask',
 ];
+
+// User-defined "/" actions: the id is what the user types after the slash.
+const CUSTOM_ACTION_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const CUSTOM_ACTION_PREFIX = 'custom:';
+const MAX_CUSTOM_ACTIONS = 20;
+const MAX_CUSTOM_PROMPT_CHARS = 2000;
+// Names the built-in "/" menu already uses, so a custom one can't shadow them.
+const RESERVED_SLASH_IDS = [...ACTION_IDS, 'what-to-say', 'follow-ups', 'solve-code', 'clipboard'];
 
 const ACCENT_IDS = ['blue', 'violet', 'green', 'orange'];
 const THEME_IDS = ['system', 'light', 'dark'];
@@ -62,8 +71,62 @@ function validateProvider(v) {
 }
 
 function validateAction(v) {
+  if (typeof v === 'string' && v.startsWith(CUSTOM_ACTION_PREFIX)) {
+    if (!CUSTOM_ACTION_ID_RE.test(v.slice(CUSTOM_ACTION_PREFIX.length))) fail('Invalid custom action id');
+    return v;
+  }
   if (!ACTION_IDS.includes(v)) fail(`Unknown action: ${String(v).slice(0, 40)}`);
   return v;
+}
+
+function validateCustomActions(v) {
+  if (!Array.isArray(v)) fail('customActions must be a list');
+  if (v.length > MAX_CUSTOM_ACTIONS) fail(`At most ${MAX_CUSTOM_ACTIONS} custom actions`);
+  const seen = new Set();
+  return v.map((a) => {
+    if (!isPlainObject(a)) fail('Each custom action must be an object');
+    const id = typeof a.id === 'string' ? a.id.trim() : '';
+    if (!CUSTOM_ACTION_ID_RE.test(id))
+      fail(`Action name "${id.slice(0, 40)}" must be 1–32 lowercase letters, digits or dashes`);
+    if (RESERVED_SLASH_IDS.includes(id)) fail(`"/${id}" is a built-in action — pick another name`);
+    if (seen.has(id)) fail(`Two actions are both called "/${id}"`);
+    seen.add(id);
+    const name = typeof a.name === 'string' ? a.name.trim().slice(0, 40) : '';
+    const prompt = typeof a.prompt === 'string' ? a.prompt.trim() : '';
+    if (!prompt) fail(`Action "/${id}" needs a prompt`);
+    if (prompt.length > MAX_CUSTOM_PROMPT_CHARS)
+      fail(`The prompt for "/${id}" is too long (max ${MAX_CUSTOM_PROMPT_CHARS} characters)`);
+    return { id, name: name || id, prompt };
+  });
+}
+
+// What region.html sends back: cancelled, a rectangle in DIP, or null for the whole screen.
+const MAX_REGION_COORD = 20_000;
+function validateRegionResult(p) {
+  if (!isPlainObject(p)) fail('Invalid region result');
+  if (p.cancelled) return { cancelled: true, rect: null };
+  if (p.rect === null || p.rect === undefined) return { cancelled: false, rect: null };
+  const r = p.rect;
+  const ok = (n) => Number.isFinite(n) && n >= 0 && n <= MAX_REGION_COORD;
+  if (
+    !isPlainObject(r) ||
+    !ok(r.x) ||
+    !ok(r.y) ||
+    !ok(r.width) ||
+    !ok(r.height) ||
+    r.width < 1 ||
+    r.height < 1
+  )
+    fail('Invalid region rectangle');
+  return {
+    cancelled: false,
+    rect: {
+      x: Math.round(r.x),
+      y: Math.round(r.y),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    },
+  };
 }
 
 function validateRequestId(v) {
@@ -190,6 +253,7 @@ const SETTINGS_SCHEMA = {
   theme: (v) => (THEME_IDS.includes(v) ? v : fail(`theme must be one of ${THEME_IDS.join(', ')}`)),
   models: validateModels,
   shortcuts: validateShortcuts,
+  customActions: validateCustomActions,
 };
 
 function validateSettingsPatch(patch) {
@@ -234,6 +298,9 @@ module.exports = {
   SHORTCUT_COMMANDS,
   ACCENT_IDS,
   THEME_IDS,
+  CUSTOM_ACTION_PREFIX,
+  CUSTOM_ACTION_ID_RE,
+  MAX_CUSTOM_ACTIONS,
   LIMITS,
   PANEL_SIZE,
   ValidationError,
@@ -242,6 +309,8 @@ module.exports = {
   validateAction,
   validateRequestId,
   validateRunPayload,
+  validateCustomActions,
+  validateRegionResult,
   validateClip,
   validateApiKeyArgs,
   validateResize,

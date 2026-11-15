@@ -1,7 +1,6 @@
 // Capture helpers. Screen screenshots use a one-shot getDisplayMedia grab
 // (video only, discarded immediately after). Mic uses plain getUserMedia.
-// Meeting/system audio uses getDisplayMedia's Windows loopback path that
-// main.js wires up via session.setDisplayMediaRequestHandler.
+// Ghost never captures system audio.
 //
 // Every getDisplayMedia call is preceded by window.ghost.armCapture(): the
 // main process denies display-media requests that weren't armed moments
@@ -15,11 +14,9 @@
   const canvasEl = document.getElementById('capture-canvas');
 
   let micStream = null;
-  let meetingStream = null;
   let micRecorder = null;
-  let meetingRecorder = null;
 
-  const rollingTranscript = { mic: [], meeting: [] };
+  const rollingTranscript = { mic: [] };
   const MAX_TRANSCRIPT_CHARS = 6000;
   const transcriptListeners = new Set();
 
@@ -60,17 +57,15 @@
   function getCombinedTranscript() {
     const lines = [];
     if (rollingTranscript.mic.length) lines.push(`[You] ${rollingTranscript.mic.join(' ')}`);
-    if (rollingTranscript.meeting.length)
-      lines.push(`[Meeting audio] ${rollingTranscript.meeting.join(' ')}`);
     return lines.join('\n\n');
   }
 
   // Bumped on every clear so clips recorded before the clear (still queued
   // or mid-transcription) don't repopulate the transcript afterwards.
-  const generation = { mic: 0, meeting: 0 };
+  const generation = { mic: 0 };
 
   function clearTranscript(source) {
-    for (const key of source ? [source] : ['mic', 'meeting']) {
+    for (const key of source ? [source] : ['mic']) {
       rollingTranscript[key] = [];
       generation[key]++;
     }
@@ -86,18 +81,59 @@
       await videoEl.play();
       // let a frame or two render
       await new Promise((r) => setTimeout(r, 120));
-      const scale = Math.min(1, SCREENSHOT_MAX_SIDE / Math.max(videoEl.videoWidth, videoEl.videoHeight));
-      canvasEl.width = Math.round(videoEl.videoWidth * scale);
-      canvasEl.height = Math.round(videoEl.videoHeight * scale);
-      const ctx = canvasEl.getContext('2d');
-      ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
-      const dataUrl = canvasEl.toDataURL('image/jpeg', SCREENSHOT_JPEG_QUALITY);
-      return { base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' };
+      return frameToJpeg();
     } finally {
       stream.getTracks().forEach((t) => t.stop());
       videoEl.srcObject = null;
-      canvasEl.width = canvasEl.height = 0; // drop the pixels
     }
+  }
+
+  // Encode whatever frame the hidden <video> is showing right now.
+  function frameToJpeg() {
+    const scale = Math.min(1, SCREENSHOT_MAX_SIDE / Math.max(videoEl.videoWidth, videoEl.videoHeight));
+    canvasEl.width = Math.round(videoEl.videoWidth * scale);
+    canvasEl.height = Math.round(videoEl.videoHeight * scale);
+    const ctx = canvasEl.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+    const dataUrl = canvasEl.toDataURL('image/jpeg', SCREENSHOT_JPEG_QUALITY);
+    canvasEl.width = canvasEl.height = 0; // drop the pixels
+    return { base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' };
+  }
+
+  // ---- Watch mode ----
+  // One persistent screen stream, started by the user from the eye toggle.
+  // Nothing is stored or sent on a timer: a single frame is grabbed at the
+  // moment of each question, so the answer is about what's on screen *now*.
+  let watchStream = null;
+  const watchListeners = new Set();
+
+  async function startWatch() {
+    if (watchStream) return;
+    await window.ghost.armCapture('screen');
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    watchStream = stream;
+    videoEl.srcObject = stream;
+    await videoEl.play();
+    // If the display goes away (or the OS ends the stream), fall out of watch mode.
+    stream.getVideoTracks()[0].addEventListener('ended', () => {
+      if (watchStream === stream) {
+        stopWatch();
+        for (const cb of watchListeners) cb();
+      }
+    });
+  }
+
+  function stopWatch() {
+    if (!watchStream) return;
+    watchStream.getTracks().forEach((t) => t.stop());
+    watchStream = null;
+    videoEl.srcObject = null;
+  }
+
+  // Resolves to a screenshot of the current frame, or null when not watching.
+  async function grabWatchFrame() {
+    if (!watchStream || videoEl.readyState < 2) return null;
+    return frameToJpeg();
   }
 
   // ---- Transcription queue ----
@@ -280,37 +316,29 @@
     return { text, error: text ? null : lastTranscribeError };
   }
 
-  async function startMeeting(onTranscribed) {
-    if (meetingStream) return;
-    await window.ghost.armCapture('meeting');
-    const raw = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    raw.getVideoTracks().forEach((t) => {
-      t.stop();
-      raw.removeTrack(t);
-    });
-    if (!raw.getAudioTracks().length) throw new Error('No system audio track was granted');
-    meetingStream = raw;
-    meetingRecorder = startRollingRecorder(meetingStream, 'meeting', onTranscribed);
-  }
-
-  function stopMeeting() {
-    if (meetingRecorder) {
-      meetingRecorder.stop();
-      meetingRecorder = null;
+  // With Watch mode on, the stream is already open: reuse its current frame
+  // instead of asking for a second screen share.
+  async function captureScreenshotOrFrame() {
+    if (watchStream) {
+      const frame = await grabWatchFrame();
+      if (frame) return frame;
     }
-    if (meetingStream) {
-      meetingStream.getTracks().forEach((t) => t.stop());
-      meetingStream = null;
-    }
+    return captureScreenshot();
   }
 
   window.ghostCapture = {
-    captureScreenshot,
+    captureScreenshot: captureScreenshotOrFrame,
+    startWatch,
+    stopWatch,
+    grabWatchFrame,
+    isWatchOn: () => !!watchStream,
+    onWatchEnded: (cb) => {
+      watchListeners.add(cb);
+      return () => watchListeners.delete(cb);
+    },
     startMic,
     stopMic,
     takeMicSpeech,
-    startMeeting,
-    stopMeeting,
     getCombinedTranscript,
     clearTranscript,
     onTranscriptChange: (cb) => {
@@ -322,6 +350,5 @@
       return () => errorListeners.delete(cb);
     },
     isMicOn: () => !!micStream,
-    isMeetingOn: () => !!meetingStream,
   };
 })();

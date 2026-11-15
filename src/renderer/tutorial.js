@@ -6,9 +6,9 @@
     {
       title: 'Welcome to Ghost',
       body: `Ghost is a small floating panel that can help you while you
-work — look at your screen when you ask, listen to your mic, and hear
-meeting audio, so it can assist in real time. Nothing happens
-automatically: you turn each input on and off yourself.`,
+work — look at your screen when you ask and listen to your mic, so it can
+assist in real time. Nothing happens automatically: you turn each input on
+and off yourself.`,
     },
     {
       title: 'Add your API key',
@@ -18,22 +18,22 @@ on this PC — it's never sent anywhere except directly to the provider you
 choose. Add or change it any time in Settings (gear icon) → AI tab.`,
     },
     {
-      title: 'Screen, mic, and meeting audio',
-      body: `Use the capture icons in the title bar. The screen icon lets
-Ghost see a single screenshot when you ask it something. The mic and speaker
-icons start a rolling, short-term transcript of your voice or system audio —
-useful during a call or while working through a problem out loud. An icon is
-filled while it's on; click it again to turn it off. Ghost never listens or
-looks in the background by default.`,
+      title: 'Screen, mic, and / actions',
+      body: `Use the capture icons in the title bar. The screen icon
+lets Ghost see a single screenshot when you ask it something. The mic icon
+listens to your voice — speak, then press Enter to send what you said. An
+icon is filled while it's on; click it again to turn it off. Type "/" in the
+box to pick a ready-made action like Assist, Recap or Solve code. Ghost never
+listens or looks in the background by default.`,
     },
     {
       title: 'What gets captured',
       body: `Screen grabs a single still image of your main display — only at
-the moment you click it (or run "Solve code"). Meeting listens
-to your PC's system audio until you turn it off; a red REC badge shows
-while Mic or Meeting is on. For Mic, Windows may show a one-time
-microphone permission prompt. Other people's voices are sent to your AI
-provider, so get their consent before transcribing a call.`,
+the moment you click it (or run "Solve code"). The mic listens until you
+turn it off; a red REC badge shows while it's on, and Windows may show a
+one-time microphone permission prompt. Anything the mic hears is sent to
+your AI provider, so get other people's consent before transcribing a
+conversation.`,
     },
     {
       title: 'A note on privacy and honesty',
@@ -43,14 +43,6 @@ is not guaranteed to work in every app and can be defeated by OS updates or
 recording tools. Please only use this for legitimate purposes, like private
 note-taking or personal assistance, and follow your organization's and
 meeting counterparts' policies on recording, consent, and AI use.`,
-    },
-    {
-      title: 'Zoom tip',
-      body: `To let Ghost hear other people on a Zoom call (not just you),
-Zoom's audio needs to actually be playing out of your speakers — Ghost
-captures meeting audio via Windows system-audio loopback, not from Zoom
-directly. If you're on exclusive-mode headphones or a virtual audio device,
-switch to your normal speaker output first.`,
     },
     {
       title: 'Shortcuts to remember',

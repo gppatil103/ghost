@@ -13,20 +13,23 @@ const REQUIRED_IDS = [
   'drag-region',
   'status-dot',
   'rec-badge',
+  'watch-badge',
   'smart-toggle',
   'btn-new-chat',
   'btn-settings',
+  'btn-maximize',
   'btn-minimize',
   'btn-close',
   'btn-mic',
-  'btn-meeting',
   'btn-screen',
+  'btn-watch',
   'btn-transcript',
   'transcript-panel',
   'transcript-text',
   'transcript-clear',
   'capture-hint',
   'response',
+  'response-list',
   'attachment-preview',
   'attachment-thumb-img',
   'attachment-remove',
@@ -34,6 +37,8 @@ const REQUIRED_IDS = [
   'ask-input',
   'btn-stop',
   'ask-send',
+  'slash-menu',
+  'slash-custom',
   'settings-overlay',
   'settings-close',
   'provider-select',
@@ -54,6 +59,10 @@ const REQUIRED_IDS = [
   'shortcuts-save',
   'shortcuts-reset',
   'shortcuts-status',
+  'custom-action-list',
+  'custom-action-add',
+  'custom-actions-save',
+  'custom-actions-status',
   'rerun-tutorial',
   'tutorial-overlay',
   'tutorial-sheet',
@@ -71,18 +80,13 @@ describe('index.html', () => {
   it('has the four settings tabs in order', () =>
     expect([...html.matchAll(/class="seg"[^>]*data-tab="(\w+)"/g)].map((m) => m[1])).toEqual([
       'ai',
+      'actions',
       'look',
       'privacy',
       'keys',
     ]));
 
-  it('has the four accent swatches', () =>
-    expect([...html.matchAll(/data-accent="(\w+)"/g)].map((m) => m[1])).toEqual([
-      'blue',
-      'violet',
-      'green',
-      'orange',
-    ]));
+  it('has no accent picker', () => expect(html).not.toMatch(/data-accent=|class="swatch/));
 
   it('has the three theme options in order', () =>
     expect([...html.matchAll(/data-theme-choice="(\w+)"/g)].map((m) => m[1])).toEqual([
@@ -96,14 +100,77 @@ describe('index.html', () => {
       /<div id="panel" class="panel">\s*(<!--[^>]*-->\s*)?<div class="ambient" aria-hidden="true">/,
     ));
 
-  it('has the five action chips in order', () =>
+  it('has no chip row: actions live in the "/" menu inside the input box', () => {
+    expect(html).not.toMatch(/class="chips"|class="chip\b/);
+    expect(html).toMatch(/<form id="ask-form"[^>]*>\s*(<!--[^>]*-->\s*)?<div id="slash-menu"/);
+  });
+
+  it('groups every tool in one pill, split by dividers, with window controls outside it', () => {
+    const pill = html.match(/<div class="capture-group"[\s\S]*?\n {8}<\/div>/)[0];
+    expect(
+      [...pill.matchAll(/id="((?:btn-|smart-)[\w-]+)"|class="(tool-divider)"/g)].map((m) => m[1] || m[2]),
+    ).toEqual([
+      'btn-mic',
+      'btn-screen',
+      'btn-watch',
+      'btn-transcript',
+      'tool-divider',
+      'smart-toggle',
+      'tool-divider',
+      'btn-new-chat',
+      'tool-divider',
+      'btn-settings',
+    ]);
+    expect(pill).not.toMatch(/btn-maximize|btn-minimize|btn-close/);
+  });
+
+  it('keeps the tools in the title bar, window controls last', () => {
+    const titlebar = html.match(/<header id="drag-region"[\s\S]*?<\/header>/)[0];
+    expect([...titlebar.matchAll(/id="((?:btn-|smart-)[\w-]+)"/g)].map((m) => m[1])).toEqual([
+      'btn-mic',
+      'btn-screen',
+      'btn-watch',
+      'btn-transcript',
+      'smart-toggle',
+      'btn-new-chat',
+      'btn-settings',
+      'btn-maximize',
+      'btn-minimize',
+      'btn-close',
+    ]);
+    const form = html.match(/<form id="ask-form"[\s\S]*?<\/form>/)[0];
+    expect([...form.matchAll(/id="(btn-[\w-]+|ask-send)"/g)].map((m) => m[1])).toEqual([
+      'btn-stop',
+      'ask-send',
+    ]);
+  });
+
+  it('has no meeting / system-audio capture anywhere', () => {
+    expect(html).not.toMatch(/btn-meeting|i-speaker|[Mm]eeting audio/);
+    expect(read('capture.js')).not.toMatch(/meeting|loopback/i);
+    expect(read('renderer.js')).not.toMatch(/[Mm]eeting/);
+  });
+
+  it('lists the five "/" actions in order', () =>
     expect([...html.matchAll(/data-action="(\w+)"/g)].map((m) => m[1])).toEqual([
       'assist',
       'what_to_say',
       'follow_up',
       'recap',
       'solve_code',
+      'clipboard',
     ]));
+
+  it('reserves a slot for custom actions at the end of the "/" menu', () =>
+    expect(html).toMatch(/data-action="clipboard"[\s\S]*?<div id="slash-custom"[^>]*><\/div>\s*<\/div>/));
+
+  it('ships the region-capture selector page with the same CSP posture', () => {
+    const region = read('region.html');
+    expect(region).toContain("default-src 'none'; script-src 'self';");
+    expect(region).toMatch(/<script src="region.js">/);
+    expect(read('region.js')).toMatch(/window\.ghost\.regionResult\(/);
+    expect(read('region.js')).toMatch(/window\.ghost\.onRegionImage\(/);
+  });
 
   it('defines every icon used', () => {
     const used = new Set([...html.matchAll(/href="#(i-[\w-]+)"/g)].map((m) => m[1]));
@@ -135,10 +202,37 @@ describe('styles.css', () => {
     expect(css).toMatch(/@media \(prefers-contrast: more\)/);
   });
 
-  it('keeps the chip row scrollable inside the drag region', () =>
-    expect(css).toMatch(/\.chips\s*\{[^}]*-webkit-app-region:\s*no-drag/));
+  it('floats the "/" menu above the input box', () =>
+    expect(css).toMatch(/\.slash-menu \{[^}]*bottom: calc\(100% \+ 6px\)/));
+
+  it('paints an opaque panel so 100% opacity hides everything behind it', () => {
+    expect(css).toMatch(/--panel-bg: linear-gradient\(160deg, #[0-9a-f]{6}, #[0-9a-f]{6}\);/);
+    expect(css).not.toMatch(/--panel-bg: linear-gradient\([^)]*rgba/);
+  });
 
   it('has a narrow-width rule', () => expect(css).toMatch(/@media \(max-width: 380px\)/));
+
+  it('bundles Inter and uses it as the UI font', () => {
+    const files = [...css.matchAll(/url\("assets\/fonts\/([\w.-]+)"\)/g)].map((m) => m[1]);
+    expect(files).toEqual(['inter-latin.woff2', 'inter-latin-ext.woff2']);
+    for (const f of files)
+      expect(fs.existsSync(path.join(__dirname, '..', 'src', 'renderer', 'assets', 'fonts', f))).toBe(true);
+    expect(css).toMatch(/font-family: "Inter", "Segoe UI Variable Text"/);
+    expect(html).toMatch(/font-src 'self'/);
+  });
+
+  it('sizes the segmented control for five tabs', () => {
+    expect(css).toMatch(/\.segmented \{[^}]*grid-template-columns: repeat\(5, 1fr\)/);
+    expect(css).toMatch(/\.seg-pill \{[^}]*width: calc\(\(100% - 6px\) \/ 5\)/);
+  });
+
+  it('hides everything but the input in compact mode', () =>
+    expect(css).toMatch(
+      /body\.compact \.titlebar, body\.compact \.drawer, body\.compact \.response[^{]*\{ display: none; \}/,
+    ));
+
+  it('gives every settings tab the same full height', () =>
+    expect(css).toMatch(/#settings-overlay \.sheet \{ height: 100%; \}/));
 
   it('loads no external resources', () => expect(css).not.toMatch(/@import|url\(\s*['"]?https?:/));
 
@@ -165,6 +259,7 @@ describe('tutorial.js', () => {
   it('points at the new controls', () => {
     expect(tut).not.toMatch(/"Screen" pill|"Mic" or "Meeting"/);
     expect(tut).toMatch(/icons? in the title bar/);
+    expect(tut).not.toMatch(/meeting audio|system audio|Zoom|speaker/i);
     expect(tut).toMatch(/Settings → AI|AI tab/);
   });
 
@@ -187,14 +282,21 @@ describe('renderer.js', () => {
   it('no longer references the header opacity slider', () =>
     expect(js).not.toMatch(/quick-opacity|quickOpacity/));
 
+  // The response list background drags the window; entries opt out so text stays selectable.
+  it('appends entries to the draggable response list, not the scroll container', () => {
+    expect(js).toMatch(/const listEl = \$\('#response-list'\)/);
+    expect(js).toMatch(/listEl\.appendChild\(div\)/);
+    expect(js).not.toMatch(/responseEl\.appendChild\(/);
+    const css = read('styles.css');
+    expect(css).toMatch(/\.response-list \{\s*-webkit-app-region: drag;/);
+    expect(css).toMatch(/\.entry, \.history-note \{ -webkit-app-region: no-drag;/);
+  });
+
   it('applies the saved theme and follows Windows when set to system', () => {
     expect(js).toMatch(/applyTheme\(settings\.theme\)/);
     expect(js).toMatch(/matchMedia\('\(prefers-color-scheme: dark\)'\)/);
     expect(js).toMatch(/saveSetting\(\{ theme: themeChoice \}\)/);
   });
-
-  it('falls back to blue for unknown accents', () =>
-    expect(js).toMatch(/ACCENTS\[[^\]]+\]\s*\|\|\s*ACCENTS\.blue/));
 
   it('drives overlays and the transcript drawer with the new state hooks', () => {
     expect(js).toMatch(/window\.ghostUI\s*=\s*\{\s*openOverlay,\s*closeOverlay\s*\}/);
@@ -209,7 +311,39 @@ describe('renderer.js', () => {
     expect(js).toMatch(/onTranscriptChange\(\(\) => \{[^}]*updateRecBadge\(\)/);
   });
 
-  // Review fix: a plain mouse wheel must scroll the horizontal chip row.
-  it('maps vertical wheel to horizontal chip scrolling', () =>
-    expect(js).toMatch(/chips\.addEventListener\(\s*'wheel'[\s\S]{0,400}\{ passive: false \}/));
+  it('opens the "/" action menu from the input and runs the chosen action', () => {
+    expect(js).toMatch(/askInput\.addEventListener\('input', updateSlashMenu\)/);
+    expect(js).toMatch(/if \(!value\.startsWith\('\/'\)\) return closeSlashMenu\(\)/);
+    expect(js).toMatch(/runAction\(item\.dataset\.action\)/);
+    expect(js).not.toMatch(/\.chips|action-btn/);
+  });
+
+  it('captures a region through main and keeps the screenshot attached for follow-ups', () => {
+    expect(js).toMatch(/await window\.ghost\.captureRegion\(\)/);
+    expect(js).not.toMatch(/pendingScreenshot = null; \/\/ consume/);
+    expect(js).toMatch(/function newChat\(\) \{[\s\S]{0,400}pendingScreenshot = null;/);
+  });
+
+  it('grabs a watch-mode frame per message and reads the clipboard for "/clipboard" and paste', () => {
+    expect(js).toMatch(/window\.ghostCapture\.isWatchOn\(\)[\s\S]{0,120}grabWatchFrame\(\)/);
+    expect(js).toMatch(/if \(item\.dataset\.action === 'clipboard'\) explainClipboard\(\)/);
+    expect(js).toMatch(/askInput\.addEventListener\('paste'/);
+    expect(read('capture.js')).toMatch(/captureScreenshot: captureScreenshotOrFrame/);
+  });
+
+  it('mirrors custom actions into the "/" menu and runs them as custom:<id>', () => {
+    expect(js).toMatch(/item\.dataset\.action = `custom:\$\{a\.id\}`/);
+    expect(js).toMatch(/setSettings\(\{ customActions: list \}\)/);
+    expect(js).toMatch(/const TABS = \['ai', 'actions', 'look', 'privacy', 'keys'\]/);
+  });
+
+  it('enters compact mode from the shortcut and leaves it when an answer starts', () => {
+    expect(js).toMatch(/window\.ghost\.onQuickAsk\(\(\) => setCompact\(true\)\)/);
+    expect(js).toMatch(/if \(compact\) setCompact\(false\); \/\/ the answer needs the full panel/);
+  });
+
+  it('maximizes through main and swaps the icon', () => {
+    expect(js).toMatch(/await window\.ghost\.toggleMaximize\(\)/);
+    expect(js).toMatch(/'#i-collapse' : '#i-expand'/);
+  });
 });

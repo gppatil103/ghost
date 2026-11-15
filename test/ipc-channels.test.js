@@ -27,6 +27,15 @@ describe('IPC channel names', () => {
     expect(mainSrc).not.toMatch(/ipcMain\.handle\('/);
   });
 
+  // A lowercase drive letter in the launch cwd (d:\...) must not lock the
+  // app out of its own IPC: Chromium reports file:///D:/..., __dirname keeps d:.
+  it('compares the sender URL case-insensitively and trusts the region selector page', () => {
+    const fn = mainSrc.match(/function isAppUrl\(url\) \{[\s\S]*?\n\}/)[0];
+    expect(fn).toMatch(/u\.href\.toLowerCase\(\)/);
+    expect(fn).toMatch(/INDEX_URL\.toLowerCase\(\)/);
+    expect(fn).toMatch(/REGION_URL\.toLowerCase\(\)/);
+  });
+
   it('there is no open-external channel', () => {
     expect(preload).not.toContain('open-external');
     expect(mainSrc).not.toContain('openExternal');

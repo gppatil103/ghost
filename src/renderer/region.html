@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none';" />
+<title>Select an area</title>
+<link rel="stylesheet" href="region.css" />
+</head>
+<body>
+  <!-- A frozen screenshot of the display; the user drags a rectangle over it. -->
+  <img id="shot" alt="" draggable="false" />
+  <div id="dim"></div>
+  <div id="box" hidden><span id="size"></span></div>
+  <div id="hint">Drag to select an area &nbsp;·&nbsp; Click for the whole screen &nbsp;·&nbsp; Esc to cancel</div>
+  <script src="region.js"></script>
+</body>
+</html>
